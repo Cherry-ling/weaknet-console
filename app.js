@@ -147,6 +147,11 @@ const weaknetCommand = {
   pipeUp: 61002,
 };
 
+const launcherConfig = {
+  port: "8122",
+  agentPort: "8123",
+};
+
 const state = {
   category: "common",
   selectedKey: "normal",
@@ -183,6 +188,10 @@ const state = {
   gateway: {
     expanded: false,
     filter: "",
+  },
+  launcher: {
+    status: null,
+    starting: false,
   },
 };
 
@@ -260,6 +269,11 @@ const elements = {
   modeList: document.getElementById("modeList"),
   runtimeMode: document.getElementById("runtimeMode"),
   commandEyebrow: document.getElementById("commandEyebrow"),
+  launcherGate: document.getElementById("launcherGate"),
+  launcherMessage: document.getElementById("launcherMessage"),
+  launcherStatusText: document.getElementById("launcherStatusText"),
+  launcherStartButton: document.getElementById("launcherStartButton"),
+  launcherRetryButton: document.getElementById("launcherRetryButton"),
 };
 
 const editorFields = [
@@ -291,6 +305,143 @@ function saveHistory() {
 
 function isLikelyLocalAgent() {
   return location.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+}
+
+function isLauncherPage() {
+  return isLikelyLocalAgent() && location.port === launcherConfig.port;
+}
+
+function getAgentUrl(path = "/") {
+  const host = location.hostname || "127.0.0.1";
+  return `${location.protocol}//${host}:${launcherConfig.agentPort}${path}`;
+}
+
+function redirectToAgent(status = state.launcher.status) {
+  const target = status && status.agentUrl ? status.agentUrl : getAgentUrl("/");
+  window.location.replace(target);
+}
+
+function setLauncherGate(open) {
+  if (!elements.launcherGate) return;
+  elements.launcherGate.hidden = !open;
+}
+
+function setLauncherStatus(text, tone = "info") {
+  if (!elements.launcherStatusText) return;
+  elements.launcherStatusText.textContent = text;
+  elements.launcherStatusText.classList.toggle("ok", tone === "ok");
+  elements.launcherStatusText.classList.toggle("error", tone === "error");
+}
+
+function setLauncherBusy(busy) {
+  state.launcher.starting = busy;
+  if (elements.launcherStartButton) elements.launcherStartButton.disabled = busy;
+  if (elements.launcherRetryButton) elements.launcherRetryButton.disabled = busy;
+}
+
+async function fetchLauncherJson(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(path, {
+      cache: "no-store",
+      ...options,
+    });
+  } catch (error) {
+    throw new Error(`Launcher 未连接：${error.message}`);
+  }
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+  if (!response.ok || (data && data.ok === false)) {
+    throw new Error((data && data.error) || `Launcher HTTP ${response.status}`);
+  }
+  return data;
+}
+
+async function getLauncherStatus() {
+  const status = await fetchLauncherJson("/api/launcher/status");
+  state.launcher.status = status;
+  if (status.agentPort) launcherConfig.agentPort = String(status.agentPort);
+  return status;
+}
+
+function renderLauncherStatus(status) {
+  const agent = status && status.agent;
+  if (agent && agent.ready) {
+    if (elements.launcherMessage) elements.launcherMessage.textContent = "弱网服务已授权，正在进入正式控制台。";
+    setLauncherStatus("弱网服务已授权", "ok");
+    return;
+  }
+  if (agent && agent.running && !agent.ready) {
+    if (elements.launcherMessage) {
+      elements.launcherMessage.textContent = "检测到本机弱网服务已运行但未获得管理员权限，需要先停止旧服务后再重新授权。";
+    }
+    setLauncherStatus(agent.message || "端口被未授权服务占用", "error");
+    return;
+  }
+  if (elements.launcherMessage) {
+    elements.launcherMessage.textContent =
+      "为模拟真实弱网环境，本工具需要临时调整本机网络规则，用于实现延迟、丢包、限速和断网等效果。点击继续后，macOS 将弹出系统授权框。";
+  }
+  setLauncherStatus("弱网服务未授权", "info");
+}
+
+async function refreshLauncherGate() {
+  if (!isLauncherPage()) return false;
+  setLauncherGate(true);
+  elements.runtimeMode.textContent = "启动页";
+  if (elements.launcherMessage) elements.launcherMessage.textContent = "正在检测本机弱网服务...";
+  setLauncherStatus("检测中", "info");
+
+  try {
+    const status = await getLauncherStatus();
+    renderLauncherStatus(status);
+    if (status.agent && status.agent.ready) {
+      setTimeout(() => redirectToAgent(status), 450);
+    }
+  } catch (error) {
+    if (elements.launcherMessage) elements.launcherMessage.textContent = "启动页服务异常，请重新打开 open-weaknet.command。";
+    setLauncherStatus(error.message, "error");
+  }
+  return true;
+}
+
+async function waitForLauncherAgentReady() {
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    const status = await getLauncherStatus();
+    renderLauncherStatus(status);
+    if (status.agent && status.agent.ready) return status;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error("弱网服务启动超时，请重新检测或查看 /tmp/weaknet-console-agent.log。");
+}
+
+async function startLauncherAgent() {
+  if (!isLauncherPage() || state.launcher.starting) return;
+  setLauncherBusy(true);
+  if (elements.launcherMessage) elements.launcherMessage.textContent = "等待 macOS 系统授权框，请输入本机登录密码。";
+  setLauncherStatus("正在请求管理员授权", "info");
+  try {
+    const result = await fetchLauncherJson("/api/launcher/start", { method: "POST" });
+    state.launcher.status = result;
+    if (result.agentPort) launcherConfig.agentPort = String(result.agentPort);
+    if (result.agent && result.agent.ready) {
+      renderLauncherStatus(result);
+      setTimeout(() => redirectToAgent(result), 450);
+      return;
+    }
+    const status = await waitForLauncherAgentReady();
+    setTimeout(() => redirectToAgent(status), 450);
+  } catch (error) {
+    if (elements.launcherMessage) elements.launcherMessage.textContent = "弱网服务未启动，可以重新尝试授权。";
+    setLauncherStatus(error.message, "error");
+    showToast(error.message, "error", { duration: 6200 });
+  } finally {
+    setLauncherBusy(false);
+  }
 }
 
 function getToastLayer() {
@@ -374,7 +525,7 @@ async function fetchAgentJson(path) {
     response = await fetch(path, { cache: "no-store" });
   } catch (error) {
     if (/failed to fetch|load failed|networkerror/i.test(error.message || "")) {
-      throw new Error("本地 Agent 未启动或页面连接已断开，请运行 start-admin.command 后刷新页面");
+      throw new Error("本地 Agent 未启动或页面连接已断开，请运行 open-weaknet.command 授权启动后刷新页面");
     }
     throw error;
   }
@@ -2882,6 +3033,8 @@ function bindEvents() {
   });
 
   elements.refreshDevicesButton.addEventListener("click", refreshDevices);
+  if (elements.launcherStartButton) elements.launcherStartButton.addEventListener("click", startLauncherAgent);
+  if (elements.launcherRetryButton) elements.launcherRetryButton.addEventListener("click", refreshLauncherGate);
   elements.foregroundButton.addEventListener("click", readForegroundApp);
   elements.installVpnButton.addEventListener("click", installAndroidVpnAgentFromUi);
   elements.authorizeVpnButton.addEventListener("click", authorizeAndroidVpnFromUi);
@@ -2935,10 +3088,15 @@ function bindEvents() {
   });
 }
 
-seedPerformanceSamples();
-bindEvents();
-setMonitorTab("network");
-startNetworkCurve();
-updateNetworkModeUi();
-renderAll();
-refreshDevices();
+async function initApp() {
+  seedPerformanceSamples();
+  bindEvents();
+  setMonitorTab("network");
+  updateNetworkModeUi();
+  renderAll();
+  if (await refreshLauncherGate()) return;
+  startNetworkCurve();
+  refreshDevices();
+}
+
+initApp();

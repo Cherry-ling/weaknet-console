@@ -1,0 +1,157 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: Game Network Lab
+        - heading "游戏性能与弱网控制台" [level=1] [ref=e6]
+      - generic "全局状态" [ref=e7]:
+        - generic [ref=e8]: 启动页
+        - button "恢复正常网络" [ref=e9] [cursor=pointer]: ↺
+    - main [ref=e10]:
+      - region "本机弱网" [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - paragraph [ref=e14]: Device
+            - heading "本机弱网" [level=2] [ref=e15]
+          - generic [ref=e16]: 本机模式
+        - generic [ref=e17]:
+          - generic [ref=e18]:
+            - text: 模式
+            - combobox "模式":
+              - option "Android VPN Agent"
+              - option "macOS 网关"
+              - option "Mac 全局弱网" [selected]
+              - option "Mac Unity 真实断网仿真"
+            - button "Mac 全局弱网 Mac 全局弱网说明" [ref=e20] [cursor=pointer]:
+              - generic [ref=e21]: Mac 全局弱网
+              - button "Mac 全局弱网说明" [ref=e22]:
+                - text: "?"
+                - tooltip "底层逻辑：接入弱网工具.app 的全局 pf + dnctl/dummynet 方案，把整台 Mac 非 lo0 的 TCP/UDP 流量导入 pipe。使用方法：只选择该模式并应用预设；会影响浏览器、Unity、SDK、CDN 等所有外网流量，清除弱网即可恢复。"
+          - paragraph [ref=e24]: Mac 全局弱网会影响整台 Mac 的非 localhost 网络，效果最接近真实断网/弱网。
+      - region "实时网络曲线" [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - paragraph [ref=e28]: Performance
+            - generic [ref=e29]:
+              - heading "实时网络曲线" [level=2] [ref=e30]
+              - generic [ref=e31]: 实时采集中
+          - tablist "监控页签" [ref=e32]:
+            - tab "实时网络曲线" [selected] [ref=e33] [cursor=pointer]
+            - tab "性能监控" [ref=e34] [cursor=pointer]
+        - tabpanel "实时网络曲线" [ref=e35]:
+          - generic "网络曲线图例" [ref=e37]:
+            - generic [ref=e38]:
+              - text: 下行限制
+              - strong [ref=e40]: "--"
+            - generic [ref=e41]:
+              - text: 上行限制
+              - strong [ref=e43]: "--"
+          - generic "实时网络曲线" [ref=e45]
+      - region "弱网预设" [ref=e46]:
+        - generic [ref=e47]:
+          - generic [ref=e48]:
+            - paragraph [ref=e49]: Preset
+            - heading "弱网预设" [level=2] [ref=e50]
+          - tablist "预设分类" [ref=e51]:
+            - button "常用" [ref=e52] [cursor=pointer]
+            - button "极端" [ref=e53] [cursor=pointer]
+        - generic [ref=e54]:
+          - button "正常网络 不施加弱网 RTT 40 ms 丢包 0% 下行 不限制" [ref=e55] [cursor=pointer]:
+            - heading "正常网络" [level=3] [ref=e56]
+            - paragraph [ref=e57]: 不施加弱网
+            - generic [ref=e58]:
+              - generic [ref=e59]: RTT 40 ms
+              - generic [ref=e60]: 丢包 0%
+              - generic [ref=e61]: 下行 不限制
+          - button "Wi-Fi 网络 稳定无线网络 RTT 40 ms 丢包 0% 下行 50 Mbps" [ref=e62] [cursor=pointer]:
+            - heading "Wi-Fi 网络" [level=3] [ref=e63]
+            - paragraph [ref=e64]: 稳定无线网络
+            - generic [ref=e65]:
+              - generic [ref=e66]: RTT 40 ms
+              - generic [ref=e67]: 丢包 0%
+              - generic [ref=e68]: 下行 50 Mbps
+          - button "4G/LTE 网络 常规移动网络 RTT 80 ms 丢包 0.1% 下行 20 Mbps" [ref=e69] [cursor=pointer]:
+            - heading "4G/LTE 网络" [level=3] [ref=e70]
+            - paragraph [ref=e71]: 常规移动网络
+            - generic [ref=e72]:
+              - generic [ref=e73]: RTT 80 ms
+              - generic [ref=e74]: 丢包 0.1%
+              - generic [ref=e75]: 下行 20 Mbps
+          - button "3G 网络 较慢移动网络 RTT 180 ms 丢包 0.5% 下行 1.5 Mbps" [ref=e76] [cursor=pointer]:
+            - heading "3G 网络" [level=3] [ref=e77]
+            - paragraph [ref=e78]: 较慢移动网络
+            - generic [ref=e79]:
+              - generic [ref=e80]: RTT 180 ms
+              - generic [ref=e81]: 丢包 0.5%
+              - generic [ref=e82]: 下行 1.5 Mbps
+      - region "参数" [ref=e83]:
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - paragraph [ref=e86]: Profile
+            - heading "参数" [level=2] [ref=e87]
+          - generic [ref=e88]:
+            - checkbox "高级模式" [ref=e89]
+            - generic [ref=e90]: 高级模式
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - paragraph [ref=e93]: 当前预设
+            - strong [ref=e94]: 正常网络
+          - paragraph [ref=e95]: 不施加弱网
+        - generic [ref=e96]:
+          - generic [ref=e97]:
+            - generic [ref=e98]: 应用模式
+            - strong [ref=e99]: Mac 全局弱网
+          - generic [ref=e100]:
+            - generic [ref=e101]: RTT 延迟
+            - strong [ref=e102]: 40 ms
+          - generic [ref=e103]:
+            - generic [ref=e104]: 单向延迟
+            - strong [ref=e105]: 20 ms
+          - generic [ref=e106]:
+            - generic [ref=e107]: 抖动
+            - strong [ref=e108]: 10 ms
+          - generic [ref=e109]:
+            - generic [ref=e110]: 丢包率
+            - strong [ref=e111]: 0%
+          - generic [ref=e112]:
+            - generic [ref=e113]: 下行带宽
+            - strong [ref=e114]: 不限制
+          - generic [ref=e115]:
+            - generic [ref=e116]: 上行带宽
+            - strong [ref=e117]: 不限制
+          - generic [ref=e118]:
+            - generic [ref=e119]: 断连模式
+            - strong [ref=e120]: 无
+          - generic [ref=e121]:
+            - generic [ref=e122]: 内部 Key
+            - strong [ref=e123]: normal
+        - generic [ref=e124]:
+          - button "应用预设" [ref=e125] [cursor=pointer]
+          - button "清除弱网" [ref=e126] [cursor=pointer]
+      - region "弱网命令预览" [ref=e127]:
+        - generic [ref=e128]:
+          - generic [ref=e129]:
+            - paragraph [ref=e130]: Mac Global
+            - heading "弱网命令预览" [level=2] [ref=e131]
+          - button "复制" [ref=e132] [cursor=pointer]
+        - generic [ref=e133]: "# Mac 全局弱网：清理本机全局弱网规则 sudo pfctl -a weaknet_lab -F all sudo dnctl -q flush"
+      - region "历史记录" [ref=e134]:
+        - generic [ref=e135]:
+          - generic [ref=e136]:
+            - paragraph [ref=e137]: Report
+            - heading "历史记录" [level=2] [ref=e138]
+          - button "清空" [ref=e139] [cursor=pointer]
+        - paragraph [ref=e141]: 暂无历史记录
+  - dialog "启动管理员 Agent" [ref=e142]:
+    - paragraph [ref=e143]: Launcher
+    - heading "启动管理员 Agent" [level=2] [ref=e144]
+    - paragraph [ref=e145]: 需要启动管理员 Agent。点击下方按钮后，macOS 会弹出系统授权框。
+    - generic [ref=e146]: 管理员 Agent 未运行
+    - generic "启动流程" [ref=e147]:
+      - generic [ref=e148]: 启动页检测
+      - generic [ref=e150]: macOS 授权
+      - generic [ref=e152]: 进入控制台
+    - generic [ref=e153]:
+      - button "启动管理员 Agent" [ref=e154] [cursor=pointer]
+      - button "重新检测" [ref=e155] [cursor=pointer]
+    - paragraph [ref=e156]: 密码只会进入 macOS 系统授权框，不会被网页读取或保存。

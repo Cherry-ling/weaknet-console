@@ -1,0 +1,14 @@
+- main [ref=e2]:
+  - dialog "需要管理员授权" [ref=e3]:
+    - paragraph [ref=e4]: Launcher
+    - heading "需要管理员授权" [level=2] [ref=e5]
+    - paragraph [ref=e6]: 为模拟真实弱网环境，本工具需要临时调整本机网络规则，用于实现延迟、丢包、限速和断网等效果。点击继续后，macOS 将弹出系统授权框。
+    - generic [ref=e7]: 弱网服务未授权
+    - generic "启动流程" [ref=e8]:
+      - generic [ref=e9]: 启动页检测
+      - generic [ref=e11]: 系统授权
+      - generic [ref=e13]: 进入控制台
+    - generic [ref=e14]:
+      - button "继续授权" [ref=e15]
+      - button "重新检测" [ref=e16]
+    - paragraph [ref=e17]: 授权仅用于启动本机弱网服务，不会读取或保存您的密码；清除弱网后网络规则将恢复正常。

@@ -296,6 +296,27 @@
       </section>
     </div>
 
+    <div class="launcher-backdrop" id="launcherGate" role="presentation" hidden>
+      <section class="launcher-card" role="dialog" aria-modal="true" aria-labelledby="launcherTitle">
+        <p class="eyebrow">Launcher</p>
+        <h2 id="launcherTitle">需要管理员授权</h2>
+        <p class="launcher-copy" id="launcherMessage">正在检测本机弱网服务...</p>
+        <div class="launcher-status" id="launcherStatusText">检测中</div>
+        <div class="launcher-flow" aria-label="启动流程">
+          <span>启动页检测</span>
+          <i aria-hidden="true"></i>
+          <span>系统授权</span>
+          <i aria-hidden="true"></i>
+          <span>进入控制台</span>
+        </div>
+        <div class="launcher-actions">
+          <button class="primary-button" id="launcherStartButton" type="button">点击授权</button>
+          <button class="secondary-button" id="launcherRetryButton" type="button">刷新状态</button>
+        </div>
+        <p class="launcher-note">授权仅用于启动本机弱网服务，不会读取或保存您的密码；清除弱网后网络规则将恢复正常。</p>
+      </section>
+    </div>
+
     <script src="./app.js"></script>
   </body>
 </html>

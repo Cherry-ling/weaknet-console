@@ -24,6 +24,7 @@ fi
 
 echo "将以管理员权限启动 weaknet-console Agent。"
 echo "macOS 会要求输入一次本机登录密码；之后页面按钮会自动执行弱网下发/清除。"
+echo "更推荐使用 open-weaknet.command：它会先打开启动页，再由页面触发系统授权。"
 echo ""
 
 if [ -n "$ADB_BIN" ]; then
