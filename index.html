@@ -15,7 +15,7 @@
           <h1>游戏性能与弱网控制台</h1>
         </div>
         <div class="topbar-actions" aria-label="全局状态">
-          <div class="status-pill" id="runtimeMode">模拟模式</div>
+          <div class="status-pill" id="runtimeMode">未连接</div>
           <button class="icon-button" id="resetButton" type="button" title="恢复正常网络" aria-label="恢复正常网络">
             <span aria-hidden="true">↺</span>
           </button>
@@ -120,7 +120,7 @@
                 <button class="gateway-action" id="gatewayCopyButton" type="button">复制</button>
               </div>
             </section>
-            <p class="device-note" id="deviceNote">当前为前端模拟模式；启动本地 Agent 后可读取真机。</p>
+            <p class="device-note" id="deviceNote">请启动本地 Agent 后执行真实弱网操作。</p>
           </div>
         </section>
 
@@ -131,7 +131,7 @@
               <div class="monitor-title-row">
                 <h2 id="monitor-title">实时网络曲线</h2>
                 <span class="status-pill monitor-title-status" id="networkCurveStatus">实时采集中</span>
-                <span class="status-pill monitor-title-status" id="monitorStatus" hidden>模拟数据</span>
+                <span class="status-pill monitor-title-status" id="monitorStatus" hidden>未采集</span>
               </div>
             </div>
             <div class="monitor-tabs" role="tablist" aria-label="监控页签">

@@ -101,7 +101,7 @@ const presets = [
     presetKey: "high_loss",
     displayNameZh: "高丢包网络",
     category: "extreme",
-    scene: "主要模拟频繁丢包",
+    scene: "高频丢包场景",
     latencyRttMs: 200,
     jitterMs: 80,
     packetLossPercent: 10,
@@ -164,7 +164,7 @@ const state = {
     admin: null,
     devices: [],
     selectedSerial: "",
-    metricsSource: "simulated",
+    metricsSource: "none",
     androidVpn: null,
     macUnityTargets: [],
   },
@@ -307,6 +307,15 @@ function isLikelyLocalAgent() {
   return location.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
 }
 
+function requireLocalAgent() {
+  if (isLikelyLocalAgent()) return true;
+  const message = "请通过本地 Agent 页面执行真实弱网操作：运行 open-weaknet.command 后访问 http://localhost:8123。";
+  elements.runtimeMode.textContent = "Agent 未连接";
+  elements.deviceNote.textContent = message;
+  showToast(message, "error", { duration: 7600 });
+  return false;
+}
+
 function isLauncherPage() {
   return isLikelyLocalAgent() && location.port === launcherConfig.port;
 }
@@ -384,7 +393,7 @@ function renderLauncherStatus(status) {
   }
   if (elements.launcherMessage) {
     elements.launcherMessage.textContent =
-      "为模拟真实弱网环境，本工具需要临时调整本机网络规则，用于实现延迟、丢包、限速和断网等效果。点击继续后，macOS 将弹出系统授权框。";
+      "为实现真实弱网环境，本工具需要临时调整本机网络规则，用于实现延迟、丢包、限速和断网等效果。点击继续后，macOS 将弹出系统授权框。";
   }
   setLauncherStatus("弱网服务未授权", "info");
 }
@@ -913,7 +922,7 @@ function updateDeviceModeLayout() {
     elements.deviceStatus.textContent = "本机模式";
   } else if (elements.deviceStatus) {
     const device = getSelectedDevice();
-    elements.deviceStatus.textContent = device ? (device.state === "device" ? "在线" : device.state) : state.agent.available ? "未连接" : "模拟";
+    elements.deviceStatus.textContent = device ? (device.state === "device" ? "在线" : device.state) : "未连接";
   }
 
   setHidden(elements.deviceSerialField, !(androidVpn || macGateway));
@@ -1162,7 +1171,7 @@ function getSingleWayJitter(profile) {
 function renderDeviceOptions() {
   if (!state.agent.devices.length) {
     elements.deviceSerial.innerHTML = '<option value="">未发现 Android 设备</option>';
-    elements.deviceStatus.textContent = state.agent.available ? "未连接" : "模拟";
+    elements.deviceStatus.textContent = "未连接";
     return;
   }
 
@@ -1197,8 +1206,8 @@ function applySelectedDeviceToForm() {
 
 async function refreshDevices() {
   if (!isLikelyLocalAgent()) {
-    elements.deviceNote.textContent = "当前通过 file:// 打开，只能使用模拟模式。请运行 node server.js 后访问 http://localhost:8123。";
-    elements.monitorStatus.textContent = "模拟数据";
+    elements.deviceNote.textContent = "本地 Agent 未连接。请运行 open-weaknet.command 后访问 http://localhost:8123。";
+    elements.monitorStatus.textContent = "未采集";
     renderPerformanceStatus();
     return;
   }
@@ -1219,9 +1228,9 @@ async function refreshDevices() {
     }
   } catch (error) {
     state.agent.available = false;
-    elements.deviceStatus.textContent = "模拟";
+    elements.deviceStatus.textContent = "未连接";
     elements.deviceNote.textContent = `Agent 未连接：${error.message}`;
-    elements.monitorStatus.textContent = "模拟数据";
+    elements.monitorStatus.textContent = "未采集";
   } finally {
     renderPerformanceStatus();
     if (isMacLocalMode()) {
@@ -1312,61 +1321,12 @@ async function readForegroundApp() {
   }
 }
 
-function seedPerformanceSamples() {
-  state.performance.samples = [];
-  resetPerformanceChartDomains();
-  for (let index = 0; index < 36; index += 1) {
-    state.performance.samples.push(createPerformanceSample(index));
-  }
-}
-
 function resetPerformanceChartDomains() {
   state.performance.chartDomains = {};
 }
 
-function getNetworkSeverity(profile) {
-  if (profile.disconnectMode === "always" || profile.packetLossPercent >= 100) return 1;
-  const latency = profile.latencyRttMs || 40;
-  const loss = profile.packetLossPercent || 0;
-  const bandwidth = Math.min(profile.downloadKbps ?? 50000, profile.uploadKbps ?? 20000);
-  const latencyScore = Math.min(0.35, latency / 2200);
-  const lossScore = Math.min(0.4, loss / 25);
-  const bandwidthScore = bandwidth <= 0 ? 0.35 : Math.min(0.25, 600 / Math.max(bandwidth, 1));
-  return Math.min(1, latencyScore + lossScore + bandwidthScore);
-}
-
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min);
-}
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
-}
-
-function createPerformanceSample(index = state.performance.samples.length) {
-  const profile = state.activeProfile;
-  const severity = getNetworkSeverity(profile);
-  const wave = Math.sin(index / 3) * 0.5 + Math.cos(index / 7) * 0.35;
-  const fps = clamp(59 - severity * 22 + wave * 4 + randomBetween(-2, 2), 8, 60);
-  const jank = Math.max(0, Math.round(severity * 9 + randomBetween(-1, 2)));
-  const cpu = clamp(36 + severity * 24 + wave * 5 + randomBetween(-4, 5), 18, 92);
-  const memory = clamp(980 + severity * 260 + wave * 45 + randomBetween(-35, 35), 680, 1800);
-  const baseDown = profile.downloadKbps ?? 3600;
-  const baseUp = profile.uploadKbps ?? 900;
-  const downKbps = profile.disconnectMode === "always" ? 0 : clamp(baseDown * randomBetween(0.18, 0.72), 0, baseDown);
-  const upKbps = profile.disconnectMode === "always" ? 0 : clamp(baseUp * randomBetween(0.12, 0.55), 0, baseUp);
-  const rtt = profile.latencyRttMs === null ? 0 : clamp(profile.latencyRttMs + randomBetween(-profile.jitterMs, profile.jitterMs), 0, 2000);
-
-  return {
-    time: Date.now(),
-    fps,
-    jank,
-    cpu,
-    memory,
-    downKbps,
-    upKbps,
-    rtt,
-  };
 }
 
 function normalizeRealMetric(metric) {
@@ -1411,7 +1371,7 @@ function getLatestPerformanceSample() {
   if (state.performance.running && state.agent.metricsSource === "adb") {
     return createEmptyRealPerformanceSample();
   }
-  return createPerformanceSample();
+  return null;
 }
 
 function getLatestRealPerformanceSample() {
@@ -1496,15 +1456,6 @@ function getPerformanceStatusMeta() {
     };
   }
 
-  if (state.performance.running && state.agent.metricsSource === "simulated") {
-    return {
-      label: "模拟数据",
-      title: "当前为模拟监控数据",
-      message: "连接本地 Agent 和 Android 设备后可采集真机指标。",
-      tone: "info",
-    };
-  }
-
   if (state.performance.paused) {
     return {
       label: "已暂停",
@@ -1516,8 +1467,8 @@ function getPerformanceStatusMeta() {
 
   if (!isLikelyLocalAgent() || !state.agent.available) {
     return {
-      label: "模拟数据",
-      title: "当前为模拟监控数据",
+      label: "未连接",
+      title: "本地 Agent 未连接",
       message: "启动本地 Agent 后可读取真机指标。",
       tone: "info",
     };
@@ -1558,31 +1509,36 @@ function renderPerformanceStatus() {
 
 function renderPerformance() {
   const latest = getLatestPerformanceSample();
-  const isReal = latest.source === "adb";
+  const isReal = latest && latest.source === "adb";
   const errors = isReal && Array.isArray(latest.errors) ? latest.errors : [];
   const isAppWaiting = errors.some((item) => /应用未运行|No process|Unable to find/i.test(item));
-  const appPendingText = isAppWaiting ? "等待应用" : "采集中";
-  const fpsValue = latest.fps === null || latest.fps === undefined ? appPendingText : Math.round(latest.fps);
-  const jankValue = latest.jank === null || latest.jank === undefined ? appPendingText : `${latest.jank} 次`;
-  const rttValue = latest.rtt === null || latest.rtt === undefined ? "不可用" : formatMs(Math.round(latest.rtt));
-  const networkHint = latest.networkInterface ? `下行 / 上行 ${latest.networkInterface}` : "下行 / 上行";
+  const appPendingText = !latest ? "未采集" : isAppWaiting ? "等待应用" : "采集中";
+  const fpsValue = !latest || latest.fps === null || latest.fps === undefined ? appPendingText : Math.round(latest.fps);
+  const jankValue = !latest || latest.jank === null || latest.jank === undefined ? appPendingText : `${latest.jank} 次`;
+  const rttValue = !latest || latest.rtt === null || latest.rtt === undefined ? "不可用" : formatMs(Math.round(latest.rtt));
+  const networkHint = latest && latest.networkInterface ? `下行 / 上行 ${latest.networkInterface}` : "下行 / 上行";
   const metrics = [
-    ["FPS", fpsValue, isReal ? "adb gfxinfo" : "frames/s", isReal && (latest.fps === null || latest.fps === undefined)],
-    ["卡顿", jankValue, "当前采样", isReal && (latest.jank === null || latest.jank === undefined)],
+    ["FPS", fpsValue, isReal ? "adb gfxinfo" : "等待真机", !latest || (isReal && (latest.fps === null || latest.fps === undefined))],
+    ["卡顿", jankValue, "当前采样", !latest || (isReal && (latest.jank === null || latest.jank === undefined))],
     [
       "CPU",
-      isReal && (latest.cpu === null || latest.cpu === undefined) && isAppWaiting ? "等待应用" : formatPercent(latest.cpu),
+      !latest ? "未采集" : isReal && (latest.cpu === null || latest.cpu === undefined) && isAppWaiting ? "等待应用" : formatPercent(latest.cpu),
       "进程估算",
-      isReal && (latest.cpu === null || latest.cpu === undefined),
+      !latest || (isReal && (latest.cpu === null || latest.cpu === undefined)),
     ],
     [
       "内存",
-      isReal && (latest.memory === null || latest.memory === undefined) && isAppWaiting ? "等待应用" : formatMemory(latest.memory),
+      !latest ? "未采集" : isReal && (latest.memory === null || latest.memory === undefined) && isAppWaiting ? "等待应用" : formatMemory(latest.memory),
       "常驻内存",
-      isReal && (latest.memory === null || latest.memory === undefined),
+      !latest || (isReal && (latest.memory === null || latest.memory === undefined)),
     ],
-    ["网络", `${formatRate(latest.downKbps)} / ${formatRate(latest.upKbps)}`, networkHint, isReal && latest.downKbps === null && latest.upKbps === null],
-    ["RTT", rttValue, "网络往返", isReal && (latest.rtt === null || latest.rtt === undefined)],
+    [
+      "网络",
+      latest ? `${formatRate(latest.downKbps)} / ${formatRate(latest.upKbps)}` : "未采集",
+      networkHint,
+      !latest || (isReal && latest.downKbps === null && latest.upKbps === null),
+    ],
+    ["RTT", rttValue, "网络往返", !latest || (isReal && (latest.rtt === null || latest.rtt === undefined))],
   ];
 
   elements.performanceGrid.innerHTML = metrics
@@ -2078,7 +2034,7 @@ function drawNetworkCurveChart() {
 function startNetworkCurve() {
   if (state.networkCurve.eventSource || state.networkCurve.timerId) return;
   if (!isLikelyLocalAgent()) {
-    elements.networkCurveStatus.textContent = "模拟模式";
+    elements.networkCurveStatus.textContent = "未连接";
     drawNetworkCurveChart();
     return;
   }
@@ -2112,12 +2068,6 @@ function setMonitorTab(tab) {
   }
 }
 
-function tickPerformance() {
-  state.performance.samples.push(createPerformanceSample());
-  state.performance.samples = state.performance.samples.slice(-72);
-  renderPerformance();
-}
-
 function startMonitoring() {
   if (state.performance.running) return;
   state.performance.paused = false;
@@ -2128,11 +2078,12 @@ function startMonitoring() {
     return;
   }
 
-  state.performance.running = true;
-  state.agent.metricsSource = "simulated";
-  elements.monitorStatus.textContent = "模拟监控中";
-  tickPerformance();
-  state.performance.timerId = window.setInterval(tickPerformance, 1000);
+  state.performance.running = false;
+  state.agent.metricsSource = "none";
+  elements.monitorStatus.textContent = "未采集";
+  elements.deviceNote.textContent = "性能监控需要本地 Agent 和已授权 Android 设备。";
+  showToast(elements.deviceNote.textContent, "error", { duration: 6200 });
+  renderPerformanceStatus();
 }
 
 function startRealMonitoring() {
@@ -2629,11 +2580,11 @@ function renderHistory() {
             </div>
             <div>
               <dt>FPS</dt>
-              <dd>${item.performanceSnapshot ? Math.round(item.performanceSnapshot.fps) : "未记录"}</dd>
+              <dd>${item.performanceSnapshot && Number.isFinite(item.performanceSnapshot.fps) ? Math.round(item.performanceSnapshot.fps) : "未记录"}</dd>
             </div>
             <div>
               <dt>CPU</dt>
-              <dd>${item.performanceSnapshot ? formatPercent(item.performanceSnapshot.cpu) : "未记录"}</dd>
+              <dd>${item.performanceSnapshot && Number.isFinite(item.performanceSnapshot.cpu) ? formatPercent(item.performanceSnapshot.cpu) : "未记录"}</dd>
             </div>
           </dl>
         </article>
@@ -2710,8 +2661,13 @@ async function applyProfile() {
   syncProfileFromEditor();
   const profile = state.activeProfile;
   state.networkMode = getNetworkMode();
+  if (!requireLocalAgent()) {
+    renderSummary();
+    renderCommandPreview();
+    return;
+  }
 
-  if (isLikelyLocalAgent() && isAndroidVpnMode()) {
+  if (isAndroidVpnMode()) {
     elements.runtimeMode.textContent = "准备 Android VPN";
     try {
       await ensureAndroidVpnReady(profile);
@@ -2759,7 +2715,7 @@ async function applyProfile() {
     return;
   }
 
-  if (isLikelyLocalAgent() && isMacLocalMode()) {
+  if (isMacLocalMode()) {
     elements.runtimeMode.textContent = isMacGlobalMode() ? "准备 Mac 全局" : "准备 Mac Unity";
     try {
       await refreshAdminStatus();
@@ -2774,7 +2730,7 @@ async function applyProfile() {
     }
   }
 
-  if (isLikelyLocalAgent() && profile.presetKey !== "normal" && !isMacLocalMode()) {
+  if (profile.presetKey !== "normal" && !isMacLocalMode()) {
     elements.runtimeMode.textContent = "准备设备";
     try {
       await ensureWeaknetDeviceReady(profile);
@@ -2832,42 +2788,36 @@ async function applyProfile() {
     return;
   }
 
-  if (isLikelyLocalAgent()) {
-    elements.runtimeMode.textContent = "正在下发";
-    elements.deviceNote.textContent = isMacGlobalMode()
-      ? `正在下发 ${record.displayNameZh} 到整台 Mac 外网流量...`
-      : isMacUnityMode()
-        ? `正在下发 ${record.displayNameZh} 到 Mac Unity 仿真目标 ${record.targetApp}...`
+  elements.runtimeMode.textContent = "正在下发";
+  elements.deviceNote.textContent = isMacGlobalMode()
+    ? `正在下发 ${record.displayNameZh} 到整台 Mac 外网流量...`
+    : isMacUnityMode()
+      ? `正在下发 ${record.displayNameZh} 到 Mac Unity 仿真目标 ${record.targetApp}...`
       : `正在下发 ${record.displayNameZh} 到 ${record.deviceIp}...`;
-    showToast(`开始下发：${record.displayNameZh}`, "info");
-    try {
-      const data = await postAgentJson("/api/weaknet/apply", {
-        profile,
-        targetScope: isMacGlobalMode() ? "mac-global" : isMacUnityMode() ? "mac-unity" : "device",
-        targetEndpoint: isMacUnityMode() ? getMacUnityTargetsForRequest() : "",
-        deviceIp: record.deviceIp,
-        platform: record.platform,
-        targetApp: record.targetApp,
-      });
-      record.applyMode = data.mode;
-      rememberNetworkCurveLimit(profile, data.mode || "weaknet");
-      elements.runtimeMode.textContent = `${record.displayNameZh} 已下发`;
-      elements.deviceNote.textContent = data.message || `${record.displayNameZh} 已下发到 ${record.deviceIp}`;
-      showWeaknetStepToasts(data.steps);
-      showToast(data.message || `${record.displayNameZh} 已下发`, "success", { duration: 4600 });
-    } catch (error) {
-      elements.runtimeMode.textContent = "下发失败";
-      elements.deviceNote.textContent = `弱网下发失败：${error.message}`;
-      showWeaknetStepToasts(error.data && error.data.steps);
-      showToast(`弱网下发失败：${error.message}`, "error", { duration: 6200 });
-      renderSummary();
-      renderCommandPreview();
-      return;
-    }
-  } else {
-    rememberNetworkCurveLimit(profile, "simulated");
-    elements.runtimeMode.textContent = `${record.displayNameZh} 已应用`;
-    showToast(`${record.displayNameZh} 已应用到模拟模式`, "success");
+  showToast(`开始下发：${record.displayNameZh}`, "info");
+  try {
+    const data = await postAgentJson("/api/weaknet/apply", {
+      profile,
+      targetScope: isMacGlobalMode() ? "mac-global" : isMacUnityMode() ? "mac-unity" : "device",
+      targetEndpoint: isMacUnityMode() ? getMacUnityTargetsForRequest() : "",
+      deviceIp: record.deviceIp,
+      platform: record.platform,
+      targetApp: record.targetApp,
+    });
+    record.applyMode = data.mode;
+    rememberNetworkCurveLimit(profile, data.mode || "weaknet");
+    elements.runtimeMode.textContent = `${record.displayNameZh} 已下发`;
+    elements.deviceNote.textContent = data.message || `${record.displayNameZh} 已下发到 ${record.deviceIp}`;
+    showWeaknetStepToasts(data.steps);
+    showToast(data.message || `${record.displayNameZh} 已下发`, "success", { duration: 4600 });
+  } catch (error) {
+    elements.runtimeMode.textContent = "下发失败";
+    elements.deviceNote.textContent = `弱网下发失败：${error.message}`;
+    showWeaknetStepToasts(error.data && error.data.steps);
+    showToast(`弱网下发失败：${error.message}`, "error", { duration: 6200 });
+    renderSummary();
+    renderCommandPreview();
+    return;
   }
 
   pushHistory(record);
@@ -2876,14 +2826,11 @@ async function applyProfile() {
 }
 
 async function clearWeakNet() {
-  selectPreset("normal");
-  if (!isLikelyLocalAgent()) {
-    rememberNetworkCurveLimit(null, "normal");
-    elements.runtimeMode.textContent = "模拟模式";
+  if (!requireLocalAgent()) {
     renderGatewayScope();
-    showToast("已恢复模拟模式正常网络", "success");
     return;
   }
+  selectPreset("normal");
 
   state.networkMode = getNetworkMode();
   if (isAndroidVpnMode()) {
@@ -3089,7 +3036,6 @@ function bindEvents() {
 }
 
 async function initApp() {
-  seedPerformanceSamples();
   bindEvents();
   setMonitorTab("network");
   updateNetworkModeUi();

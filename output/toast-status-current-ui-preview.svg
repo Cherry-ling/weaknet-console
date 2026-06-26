@@ -1,0 +1,127 @@
+<svg width="2048" height="1120" viewBox="0 0 2048 1120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="2048" height="1120" rx="28" fill="#EDF5F6"/>
+  <rect x="0.5" y="0.5" width="2047" height="1119" rx="27.5" stroke="#C8D8DD"/>
+
+  <text x="72" y="51" fill="#687985" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="800" letter-spacing="2">GAME NETWORK LAB</text>
+  <text x="72" y="101" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="37" font-weight="900">游戏性能与弱网控制台</text>
+
+  <rect x="72" y="135" width="458" height="676" rx="9" fill="#FFFFFF" stroke="#DDE7EB"/>
+  <text x="97" y="176" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="830" letter-spacing="1.5">DEVICE</text>
+  <text x="97" y="214" fill="#1B2730" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="26" font-weight="900">测试设备</text>
+  <rect x="436" y="168" width="68" height="46" rx="23" fill="#FFFFFF" stroke="#DCE7EC" stroke-width="2"/>
+  <text x="453" y="198" fill="#078154" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="850">在线</text>
+
+  <text x="97" y="263" fill="#27323B" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="850">模式</text>
+  <rect x="97" y="272" width="408" height="56" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="114" y="309" fill="#202C35" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="780">Android VPN Agent</text>
+  <circle cx="430" cy="300" r="15" fill="#F8FBFC" stroke="#D8E5EA" stroke-width="2"/>
+  <text x="425" y="307" fill="#72828D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="850">?</text>
+  <path d="M473 296L484 307L495 296" stroke="#7E8A92" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="97" y="363" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="850">已连接设备</text>
+  <rect x="97" y="378" width="408" height="56" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="117" y="415" fill="#202C35" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="780">Xiaomi 24115RA8EC / dbb51fd4</text>
+  <path d="M488 402L496 410L504 402" stroke="#1E2B34" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="97" y="471" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="850">目标游戏</text>
+  <rect x="97" y="486" width="408" height="56" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="117" y="523" fill="#202C35" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="800">com.ffm.global</text>
+
+  <rect x="97" y="558" width="198" height="59" rx="8" fill="#0B8D98"/>
+  <text x="151" y="595" fill="#FFFFFF" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="23" font-weight="900">刷新设备</text>
+  <rect x="309" y="558" width="196" height="59" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="348" y="595" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="22" font-weight="900">读取前台应用</text>
+  <rect x="97" y="631" width="198" height="59" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="139" y="669" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="23" font-weight="900">安装 Agent</text>
+  <rect x="309" y="631" width="196" height="59" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="360" y="669" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="23" font-weight="900">VPN 授权</text>
+
+  <rect x="97" y="714" width="408" height="64" rx="8" fill="#F3FAF7" stroke="#C8EAD8"/>
+  <circle cx="123" cy="746" r="9" fill="#15955F"/>
+  <text x="144" y="739" fill="#31404A" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="760">当前状态</text>
+  <text x="144" y="764" fill="#078154" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="850">Android VPN 已停止，正常网络</text>
+
+  <rect x="555" y="135" width="1401" height="676" rx="9" fill="#FFFFFF" stroke="#DDE7EB"/>
+  <text x="579" y="176" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="830" letter-spacing="1.5">PERFORMANCE</text>
+  <text x="579" y="217" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="28" font-weight="900">实时网络曲线</text>
+  <rect x="740" y="191" width="76" height="38" rx="19" fill="#F7FBFC" stroke="#CFE0E7" stroke-width="2"/>
+  <text x="755" y="217" fill="#677A86" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="820">未启用</text>
+
+  <rect x="580" y="250" width="520" height="74" rx="10" fill="#F5FBF8" stroke="#CFECDD"/>
+  <text x="606" y="278" fill="#687985" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="800">当前效果</text>
+  <text x="606" y="306" fill="#0B7B54" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="24" font-weight="900">正常网络 · 未施加弱网</text>
+  <text x="858" y="306" fill="#6C7E89" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="17" font-weight="720">最近操作 22:47:31</text>
+
+  <rect x="580" y="348" width="1350" height="438" rx="8" fill="#10181D"/>
+  <line x1="675" y1="422" x2="1898" y2="422" stroke="#26343B" stroke-width="1"/>
+  <line x1="675" y1="526" x2="1898" y2="526" stroke="#26343B" stroke-width="1"/>
+  <line x1="675" y1="630" x2="1898" y2="630" stroke="#26343B" stroke-width="1"/>
+  <line x1="675" y1="730" x2="1898" y2="730" stroke="#26343B" stroke-width="1"/>
+  <text x="610" y="326" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700">12 Kbps</text>
+  <text x="610" y="427" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700">9 Kbps</text>
+  <text x="610" y="531" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700">6 Kbps</text>
+  <text x="610" y="635" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700">3 Kbps</text>
+  <text x="618" y="736" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700">0 Kbps</text>
+  <line x1="675" y1="732" x2="1898" y2="732" stroke="#6662FF" stroke-width="3"/>
+  <circle cx="1898" cy="732" r="5" fill="#6662FF"/>
+  <text x="646" y="755" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">22:46:07</text>
+  <text x="851" y="755" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">22:46:22</text>
+  <text x="1058" y="755" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">22:46:37</text>
+  <text x="1264" y="755" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">22:46:52</text>
+  <text x="1470" y="755" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">22:47:08</text>
+  <text x="1676" y="755" fill="#6E7E87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700">22:47:23</text>
+
+  <rect x="72" y="835" width="458" height="280" rx="9" fill="#FFFFFF" stroke="#DDE7EB"/>
+  <text x="97" y="876" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="830" letter-spacing="1.5">PRESET</text>
+  <text x="97" y="914" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="26" font-weight="900">弱网预设</text>
+  <rect x="327" y="865" width="89" height="50" rx="8" fill="#F8FBFC" stroke="#DDE7EB"/>
+  <text x="354" y="897" fill="#657682" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="17" font-weight="850">常用</text>
+  <rect x="416" y="865" width="89" height="50" rx="8" fill="#11191E"/>
+  <text x="443" y="897" fill="#FFFFFF" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="17" font-weight="850">极端</text>
+  <rect x="97" y="943" width="408" height="158" rx="8" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="117" y="987" fill="#202C35" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="24" font-weight="900">DSL 宽带</text>
+  <text x="117" y="1030" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="720">低速家宽/老式宽带</text>
+  <rect x="117" y="1049" width="114" height="34" rx="17" fill="#F6F9FA"/>
+  <text x="128" y="1071" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="800">RTT 120 ms</text>
+  <rect x="240" y="1049" width="98" height="34" rx="17" fill="#F6F9FA"/>
+  <text x="254" y="1071" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="800">丢包 0.2%</text>
+  <rect x="348" y="1049" width="116" height="34" rx="17" fill="#F6F9FA"/>
+  <text x="360" y="1071" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="800">下行 2 Mbps</text>
+
+  <rect x="555" y="835" width="803" height="280" rx="9" fill="#FFFFFF" stroke="#DDE7EB"/>
+  <text x="579" y="876" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="830" letter-spacing="1.5">PROFILE</text>
+  <text x="579" y="914" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="26" font-weight="900">参数</text>
+  <rect x="1225" y="879" width="23" height="23" rx="2" fill="#FFFFFF" stroke="#6F7D86" stroke-width="2"/>
+  <text x="1266" y="898" fill="#647581" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="17" font-weight="850">高级模式</text>
+  <rect x="579" y="943" width="754" height="116" rx="8" fill="#F8FBFC" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="600" y="985" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="820">当前预设</text>
+  <text x="600" y="1031" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="33" font-weight="900">正常网络</text>
+  <text x="1204" y="1009" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="24" font-weight="820">不施加弱网</text>
+  <rect x="579" y="1078" width="754" height="24" rx="6" fill="#F3FAF7"/>
+  <text x="600" y="1095" fill="#0B7B54" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="820">已恢复：Android VPN 已停止，Mac 弱网规则已清理</text>
+
+  <rect x="1382" y="835" width="574" height="280" rx="9" fill="#FFFFFF" stroke="#DDE7EB"/>
+  <text x="1407" y="876" fill="#6D7C87" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="830" letter-spacing="1.5">ANDROID VPN AGENT</text>
+  <text x="1407" y="914" fill="#17242D" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="26" font-weight="900">操作详情</text>
+  <rect x="1848" y="865" width="84" height="50" rx="10" fill="#FFFFFF" stroke="#DDE7EB" stroke-width="2"/>
+  <text x="1872" y="897" fill="#657682" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="20" font-weight="900">展开</text>
+  <rect x="1407" y="943" width="525" height="128" rx="8" fill="#10181D"/>
+  <circle cx="1442" cy="985" r="14" fill="#EAF8F1"/>
+  <path d="M1434 985L1440 991L1451 979" stroke="#15955F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1472" y="992" fill="#E8F4F6" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="21" font-weight="850">清除完成 · 3/3 成功</text>
+  <text x="1472" y="1028" fill="#95A9B1" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="16" font-weight="700">技术步骤已收起，不再逐条飘窗打断操作。</text>
+  <text x="1428" y="1096" fill="#75868F" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="15" font-weight="720">点“展开”查看：清理 pf anchor、清理 dummynet pipe、清除 Android VPN 弱网</text>
+
+  <g filter="url(#toastShadow)">
+    <rect x="1516" y="24" width="487" height="58" rx="10" fill="#151C22"/>
+    <circle cx="1548" cy="53" r="11" fill="#19A36B"/>
+    <path d="M1542 53L1547 58L1555 48" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1575" y="61" fill="#FFFFFF" font-family="Inter, PingFang SC, Arial, sans-serif" font-size="18" font-weight="880">已恢复正常网络 · Android VPN 已停止</text>
+  </g>
+
+  <defs>
+    <filter id="toastShadow" x="1470" y="-12" width="579" height="134" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#102029" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+</svg>
