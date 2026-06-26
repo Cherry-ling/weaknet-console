@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>游戏性能与弱网控制台</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23087f8c'/%3E%3Cpath d='M7 18h4v7H7zm7-6h4v13h-4zm7-5h4v18h-4z' fill='white'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Game Network Lab</p>
+          <h1>游戏性能与弱网控制台</h1>
+        </div>
+        <div class="topbar-actions" aria-label="全局状态">
+          <div class="status-pill" id="runtimeMode">模拟模式</div>
+          <button class="icon-button" id="resetButton" type="button" title="恢复正常网络" aria-label="恢复正常网络">
+            <span aria-hidden="true">↺</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel device-panel" aria-labelledby="device-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Device</p>
+              <h2 id="device-title">测试设备</h2>
+            </div>
+            <span class="live-dot" id="deviceStatus">未连接</span>
+          </div>
+          <div class="device-grid">
+            <div id="networkModeField" class="device-field mode-field">
+              <span class="field-title">模式</span>
+              <select id="networkMode" class="visually-hidden-select" aria-label="模式">
+                <option value="android-vpn">Android VPN Agent</option>
+                <option value="macos">macOS 网关</option>
+                <option value="mac-global" selected>Mac 全局弱网</option>
+                <option value="mac-unity">Mac Unity 真实断网仿真</option>
+              </select>
+              <div class="mode-select" id="modeSelect">
+                <div class="mode-trigger" id="modeTrigger" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="false" aria-controls="modeList">
+                  <span class="mode-name" id="modeTriggerLabel">Mac 全局弱网</span>
+                  <button class="mode-tip" id="modeTriggerTip" type="button" aria-label="Mac 全局弱网说明">?
+                    <span class="mode-tip-bubble" id="modeTriggerTipBubble" role="tooltip">底层逻辑：接入弱网工具.app 的全局 pf + dnctl/dummynet 方案，把整台 Mac 非 lo0 的 TCP/UDP 流量导入 pipe。使用方法：只选择该模式并应用预设；会影响浏览器、Unity、SDK、CDN 等所有外网流量，清除弱网即可恢复。</span>
+                  </button>
+                  <span class="mode-chevron" aria-hidden="true"></span>
+                </div>
+                <div class="mode-menu" id="modeList" role="radiogroup" aria-label="模式" hidden>
+                  <div class="mode-option" data-mode="android-vpn" role="radio" aria-checked="false" tabindex="0">
+                    <span class="mode-name">Android VPN Agent</span>
+                    <button class="mode-tip" type="button" aria-label="Android VPN Agent 说明">?
+                      <span class="mode-tip-bubble" role="tooltip">底层逻辑：通过手机端 VPN Agent 接管 Android 指定包名流量，普通弱网经 Mac SOCKS + pf/dnctl，100% 丢包在手机端直接阻断。使用方法：连接 Android 设备，填写目标包名，必要时先安装 Agent 并授权 VPN，再应用预设。</span>
+                    </button>
+                  </div>
+                  <div class="mode-option" data-mode="macos" role="radio" aria-checked="false" tabindex="0">
+                    <span class="mode-name">macOS 网关</span>
+                    <button class="mode-tip" type="button" aria-label="macOS 网关说明">?
+                      <span class="mode-tip-bubble" role="tooltip">底层逻辑：让测试设备流量经过 Mac，再按设备 IP 用 pf/dnctl 对转发流量施加带宽、延迟、丢包或阻断。使用方法：填写设备 IP，确认 Android 或 iOS 流量已走 Mac 网关，然后应用预设。</span>
+                    </button>
+                  </div>
+                  <div class="mode-option" data-mode="mac-global" role="radio" aria-checked="true" tabindex="0">
+                    <span class="mode-name">Mac 全局弱网</span>
+                    <button class="mode-tip" type="button" aria-label="Mac 全局弱网说明">?
+                      <span class="mode-tip-bubble" role="tooltip">底层逻辑：接入弱网工具.app 的全局 pf + dnctl/dummynet 方案，把整台 Mac 非 lo0 的 TCP/UDP 流量导入 pipe。使用方法：只选择该模式并应用预设；会影响浏览器、Unity、SDK、CDN 等所有外网流量，清除弱网即可恢复。</span>
+                    </button>
+                  </div>
+                  <div class="mode-option" data-mode="mac-unity" role="radio" aria-checked="false" tabindex="0">
+                    <span class="mode-name">Mac Unity 真实断网仿真</span>
+                    <button class="mode-tip" type="button" aria-label="Mac Unity 真实断网仿真说明">?
+                      <span class="mode-tip-bubble" role="tooltip">底层逻辑：限制内置 Unity 业务、CDN、SDK、直连服务器目标，并清理目标旧连接 state，让 Unity 更接近真实断网/恢复表现。使用方法：选择该模式后直接应用预设；一般不用手动填写目标。</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <label id="deviceSerialField" class="device-field">
+              已连接设备
+              <select id="deviceSerial">
+                <option value="">等待 Agent 扫描</option>
+              </select>
+            </label>
+            <label id="deviceIpField" class="device-field">
+              设备 IP
+              <input id="deviceIp" type="text" value="192.168.2.12" inputmode="decimal" />
+            </label>
+            <label id="platformField" class="device-field">
+              平台
+              <select id="platform">
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+              </select>
+            </label>
+            <label id="targetAppField" class="device-field">
+              <span id="targetAppLabel">目标游戏</span>
+              <input id="targetApp" type="text" value="com.example.game" />
+            </label>
+            <div class="device-actions" id="deviceActions">
+              <button class="primary-button compact-button" id="refreshDevicesButton" type="button">刷新设备</button>
+              <button class="secondary-button compact-button" id="foregroundButton" type="button">读取前台应用</button>
+              <button class="secondary-button compact-button" id="installVpnButton" type="button">安装 Agent</button>
+              <button class="secondary-button compact-button" id="authorizeVpnButton" type="button">VPN 授权</button>
+            </div>
+            <section class="gateway-scope" id="gatewayScope" aria-labelledby="gatewayScopeTitle" hidden>
+              <div class="gateway-scope-head">
+                <div>
+                  <h3 id="gatewayScopeTitle">受限网关</h3>
+                  <p id="gatewaySummary">Mac Unity · 0 hosts · 0 ports</p>
+                </div>
+                <span class="gateway-state" id="gatewayState"><i aria-hidden="true"></i>待下发</span>
+              </div>
+              <div class="gateway-chip-row" id="gatewayChipRow"></div>
+              <div class="gateway-inline-list" id="gatewayInlineList" hidden></div>
+              <button class="gateway-more" id="gatewayMoreButton" type="button" hidden>+0 more</button>
+              <div class="gateway-scope-actions">
+                <button class="gateway-action" id="gatewayToggleButton" type="button">查看前 5 条</button>
+                <button class="gateway-action" id="gatewayViewAllButton" type="button">查看全部</button>
+                <button class="gateway-action" id="gatewayCopyButton" type="button">复制</button>
+              </div>
+            </section>
+            <p class="device-note" id="deviceNote">当前为前端模拟模式；启动本地 Agent 后可读取真机。</p>
+          </div>
+        </section>
+
+        <section class="panel monitor-panel" aria-labelledby="monitor-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Performance</p>
+              <div class="monitor-title-row">
+                <h2 id="monitor-title">实时网络曲线</h2>
+                <span class="status-pill monitor-title-status" id="networkCurveStatus">实时采集中</span>
+                <span class="status-pill monitor-title-status" id="monitorStatus" hidden>模拟数据</span>
+              </div>
+            </div>
+            <div class="monitor-tabs" role="tablist" aria-label="监控页签">
+              <button class="monitor-tab active" id="networkCurveTab" data-monitor-tab="network" type="button" role="tab" aria-selected="true" aria-controls="networkCurvePanel">实时网络曲线</button>
+              <button class="monitor-tab" id="performanceTab" data-monitor-tab="performance" type="button" role="tab" aria-selected="false" aria-controls="performancePanel">性能监控</button>
+            </div>
+          </div>
+          <div class="monitor-tab-panel active" id="networkCurvePanel" role="tabpanel" aria-labelledby="networkCurveTab">
+            <div class="network-curve-head">
+              <div class="network-curve-legend" aria-label="网络曲线图例">
+                <span><i class="legend-line down"></i>下行限制 <strong id="networkDownLegend">--</strong></span>
+                <span><i class="legend-line up"></i>上行限制 <strong id="networkUpLegend">--</strong></span>
+              </div>
+            </div>
+            <div class="network-chart-wrap">
+              <canvas id="networkCurveChart" height="180" aria-label="实时网络曲线"></canvas>
+            </div>
+          </div>
+          <div class="monitor-tab-panel" id="performancePanel" role="tabpanel" aria-labelledby="performanceTab" hidden>
+            <div class="monitor-actions">
+              <div class="performance-status-detail" id="performanceStatusDetail" aria-live="polite">
+                <i aria-hidden="true"></i>
+                <div>
+                  <strong id="performanceStatusTitle">真机已连接，等待开始采集</strong>
+                  <span id="performanceStatusMessage">请选择目标游戏包名后点击开始。</span>
+                </div>
+              </div>
+              <div class="monitor-action-buttons">
+                <button class="primary-button compact-button" id="startMonitorButton" type="button">开始</button>
+                <button class="secondary-button compact-button" id="stopMonitorButton" type="button">停止</button>
+              </div>
+            </div>
+            <div class="perf-grid" id="performanceGrid"></div>
+            <div class="chart-wrap">
+              <canvas id="performanceChart" height="180" aria-label="性能实时曲线"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel preset-panel" aria-labelledby="preset-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Preset</p>
+              <h2 id="preset-title">弱网预设</h2>
+            </div>
+            <div class="segmented-control" role="tablist" aria-label="预设分类">
+              <button class="segment active" data-category="common" type="button">常用</button>
+              <button class="segment" data-category="extreme" type="button">极端</button>
+            </div>
+          </div>
+          <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
+        </section>
+
+        <section class="panel editor-panel" aria-labelledby="editor-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Profile</p>
+              <h2 id="editor-title">参数</h2>
+            </div>
+            <label class="switch">
+              <input id="advancedToggle" type="checkbox" />
+              <span>高级模式</span>
+            </label>
+          </div>
+
+          <div class="selected-summary">
+            <div>
+              <p class="summary-label">当前预设</p>
+              <strong id="selectedName">正常网络</strong>
+            </div>
+            <p id="selectedScene">不施加弱网</p>
+          </div>
+
+          <div class="metrics-grid" id="metricsGrid"></div>
+
+          <form class="advanced-editor" id="advancedEditor" aria-label="高级参数">
+            <label>
+              RTT 延迟 ms
+              <input id="latencyRttMs" name="latencyRttMs" type="number" min="0" step="1" />
+            </label>
+            <label>
+              抖动 ms
+              <input id="jitterMs" name="jitterMs" type="number" min="0" step="1" />
+            </label>
+            <label>
+              丢包率 %
+              <input id="packetLossPercent" name="packetLossPercent" type="number" min="0" max="100" step="0.1" />
+            </label>
+            <label>
+              下行 Kbps
+              <input id="downloadKbps" name="downloadKbps" type="number" min="0" step="1" />
+            </label>
+            <label>
+              上行 Kbps
+              <input id="uploadKbps" name="uploadKbps" type="number" min="0" step="1" />
+            </label>
+            <label>
+              断连时长秒
+              <input id="disconnectDurationSec" name="disconnectDurationSec" type="number" min="0" step="1" />
+            </label>
+            <label>
+              断连间隔秒
+              <input id="disconnectIntervalSec" name="disconnectIntervalSec" type="number" min="0" step="1" />
+            </label>
+          </form>
+
+          <div class="action-row">
+            <button class="primary-button" id="applyButton" type="button">应用预设</button>
+            <button class="secondary-button" id="clearButton" type="button">清除弱网</button>
+          </div>
+        </section>
+
+        <section class="panel command-panel" aria-labelledby="command-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow" id="commandEyebrow">Runtime</p>
+              <h2 id="command-title">弱网命令预览</h2>
+            </div>
+            <button class="ghost-button" id="copyButton" type="button">复制</button>
+          </div>
+          <pre id="commandPreview"></pre>
+        </section>
+
+        <section class="panel history-panel" aria-labelledby="history-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Report</p>
+              <h2 id="history-title">历史记录</h2>
+            </div>
+            <button class="ghost-button" id="clearHistoryButton" type="button">清空</button>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="gateway-dialog-backdrop" id="gatewayDialog" role="presentation" hidden>
+      <section class="gateway-dialog" role="dialog" aria-modal="true" aria-labelledby="gatewayDialogTitle">
+        <div class="gateway-dialog-head">
+          <div>
+            <h2 id="gatewayDialogTitle">受限网关</h2>
+            <p id="gatewayDialogSummary">Mac Unity · 0 hosts · 0 ports</p>
+          </div>
+          <button class="icon-button gateway-close-button" id="gatewayDialogCloseButton" type="button" aria-label="关闭受限网关列表">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <label class="gateway-search">
+          <input id="gatewaySearchInput" type="search" placeholder="搜索 host / port" autocomplete="off" />
+        </label>
+        <div class="gateway-table" role="table" aria-label="受限网关完整列表">
+          <div class="gateway-table-head" role="row">
+            <span role="columnheader">HOST</span>
+            <span role="columnheader">PORT</span>
+          </div>
+          <div id="gatewayTableRows"></div>
+        </div>
+        <div class="gateway-dialog-actions">
+          <button class="secondary-button" id="gatewayCopyAllButton" type="button">复制全部</button>
+          <button class="secondary-button" id="gatewayExportButton" type="button">导出</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

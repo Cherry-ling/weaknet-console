@@ -1,0 +1,175 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]: Game Network Lab
+      - heading "游戏性能与弱网控制台" [level=1] [ref=e6]
+    - generic "全局状态" [ref=e7]:
+      - generic [ref=e8]: 模拟模式
+      - button "恢复正常网络" [ref=e9] [cursor=pointer]: ↺
+  - main [ref=e10]:
+    - region "测试设备" [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - paragraph [ref=e14]: Device
+          - heading "测试设备" [level=2] [ref=e15]
+        - generic [ref=e16]: 扫描中
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - text: 已连接设备
+          - combobox "已连接设备" [ref=e19]:
+            - option "等待 Agent 扫描" [selected]
+        - generic [ref=e20]:
+          - text: 设备 IP
+          - textbox "设备 IP" [ref=e21]: 192.168.2.12
+        - generic [ref=e22]:
+          - text: 平台
+          - combobox "平台" [ref=e23]:
+            - option "Android" [selected]
+            - option "iOS"
+        - generic [ref=e24]:
+          - text: 弱网通道
+          - combobox "弱网通道" [ref=e25]:
+            - option "Android VPN Agent" [selected]
+            - option "macOS 网关"
+            - option "Mac Unity 本机"
+        - generic [ref=e26]:
+          - generic [ref=e27]: 目标游戏
+          - textbox "目标游戏" [ref=e28]:
+            - /placeholder: 例如 com.ffm.global
+            - text: com.example.game
+        - generic [ref=e29]:
+          - button "刷新设备" [ref=e30] [cursor=pointer]
+          - button "读取前台应用" [ref=e31] [cursor=pointer]
+          - button "安装 Agent" [ref=e32] [cursor=pointer]
+          - button "VPN 授权" [ref=e33] [cursor=pointer]
+        - paragraph [ref=e34]: 正在通过 adb 扫描设备...
+    - region "性能监控" [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - paragraph [ref=e38]: Performance
+          - heading "性能监控" [level=2] [ref=e39]
+        - generic [ref=e40]:
+          - generic [ref=e41]: 模拟数据
+          - button "开始" [ref=e42] [cursor=pointer]
+          - button "停止" [ref=e43] [cursor=pointer]
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: FPS
+          - strong [ref=e47]: "59"
+          - generic [ref=e48]: frames/s
+        - generic [ref=e49]:
+          - generic [ref=e50]: 卡顿
+          - strong [ref=e51]: 2 次
+          - generic [ref=e52]: 当前采样
+        - generic [ref=e53]:
+          - generic [ref=e54]: CPU
+          - strong [ref=e55]: 33%
+          - generic [ref=e56]: 进程估算
+        - generic [ref=e57]:
+          - generic [ref=e58]: 内存
+          - strong [ref=e59]: 971 MB
+          - generic [ref=e60]: 常驻内存
+        - generic [ref=e61]:
+          - generic [ref=e62]: 网络
+          - strong [ref=e63]: 1.7 Mbps / 297 Kbps
+          - generic [ref=e64]: 下行 / 上行
+        - generic [ref=e65]:
+          - generic [ref=e66]: RTT
+          - strong [ref=e67]: 45 ms
+          - generic [ref=e68]: 网络往返
+      - generic "性能实时曲线" [ref=e70]
+    - region "弱网预设" [ref=e71]:
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - paragraph [ref=e74]: Preset
+          - heading "弱网预设" [level=2] [ref=e75]
+        - tablist "预设分类" [ref=e76]:
+          - button "常用" [ref=e77] [cursor=pointer]
+          - button "极端" [ref=e78] [cursor=pointer]
+      - generic [ref=e79]:
+        - button "正常网络 不施加弱网 RTT 40 ms 丢包 0% 下行 不限制" [ref=e80] [cursor=pointer]:
+          - heading "正常网络" [level=3] [ref=e81]
+          - paragraph [ref=e82]: 不施加弱网
+          - generic [ref=e83]:
+            - generic [ref=e84]: RTT 40 ms
+            - generic [ref=e85]: 丢包 0%
+            - generic [ref=e86]: 下行 不限制
+        - button "Wi-Fi 网络 稳定无线网络 RTT 40 ms 丢包 0% 下行 50 Mbps" [ref=e87] [cursor=pointer]:
+          - heading "Wi-Fi 网络" [level=3] [ref=e88]
+          - paragraph [ref=e89]: 稳定无线网络
+          - generic [ref=e90]:
+            - generic [ref=e91]: RTT 40 ms
+            - generic [ref=e92]: 丢包 0%
+            - generic [ref=e93]: 下行 50 Mbps
+        - button "4G/LTE 网络 常规移动网络 RTT 80 ms 丢包 0.1% 下行 20 Mbps" [ref=e94] [cursor=pointer]:
+          - heading "4G/LTE 网络" [level=3] [ref=e95]
+          - paragraph [ref=e96]: 常规移动网络
+          - generic [ref=e97]:
+            - generic [ref=e98]: RTT 80 ms
+            - generic [ref=e99]: 丢包 0.1%
+            - generic [ref=e100]: 下行 20 Mbps
+        - button "3G 网络 较慢移动网络 RTT 180 ms 丢包 0.5% 下行 1.5 Mbps" [ref=e101] [cursor=pointer]:
+          - heading "3G 网络" [level=3] [ref=e102]
+          - paragraph [ref=e103]: 较慢移动网络
+          - generic [ref=e104]:
+            - generic [ref=e105]: RTT 180 ms
+            - generic [ref=e106]: 丢包 0.5%
+            - generic [ref=e107]: 下行 1.5 Mbps
+    - region "参数" [ref=e108]:
+      - generic [ref=e109]:
+        - generic [ref=e110]:
+          - paragraph [ref=e111]: Profile
+          - heading "参数" [level=2] [ref=e112]
+        - generic [ref=e113]:
+          - checkbox "高级模式" [ref=e114]
+          - generic [ref=e115]: 高级模式
+      - generic [ref=e116]:
+        - generic [ref=e117]:
+          - paragraph [ref=e118]: 当前预设
+          - strong [ref=e119]: 正常网络
+        - paragraph [ref=e120]: 不施加弱网
+      - generic [ref=e121]:
+        - generic [ref=e122]:
+          - generic [ref=e123]: 应用通道
+          - strong [ref=e124]: Android VPN Agent
+        - generic [ref=e125]:
+          - generic [ref=e126]: RTT 延迟
+          - strong [ref=e127]: 40 ms
+        - generic [ref=e128]:
+          - generic [ref=e129]: 单向延迟
+          - strong [ref=e130]: 20 ms
+        - generic [ref=e131]:
+          - generic [ref=e132]: 抖动
+          - strong [ref=e133]: 10 ms
+        - generic [ref=e134]:
+          - generic [ref=e135]: 丢包率
+          - strong [ref=e136]: 0%
+        - generic [ref=e137]:
+          - generic [ref=e138]: 下行带宽
+          - strong [ref=e139]: 不限制
+        - generic [ref=e140]:
+          - generic [ref=e141]: 上行带宽
+          - strong [ref=e142]: 不限制
+        - generic [ref=e143]:
+          - generic [ref=e144]: 断连模式
+          - strong [ref=e145]: 无
+        - generic [ref=e146]:
+          - generic [ref=e147]: 内部 Key
+          - strong [ref=e148]: normal
+      - generic [ref=e149]:
+        - button "应用预设" [ref=e150] [cursor=pointer]
+        - button "清除弱网" [ref=e151] [cursor=pointer]
+    - region "弱网命令预览" [ref=e152]:
+      - generic [ref=e153]:
+        - generic [ref=e154]:
+          - paragraph [ref=e155]: Android VPN Agent
+          - heading "弱网命令预览" [level=2] [ref=e156]
+        - button "复制" [ref=e157] [cursor=pointer]
+      - generic [ref=e158]: "# Android VPN Agent：清除手机端弱网 # serial=<device_serial> adb -s <device_serial> shell am broadcast -n com.weaknet.agent/.CommandReceiver -a com.weaknet.agent.STOP"
+    - region "历史记录" [ref=e159]:
+      - generic [ref=e160]:
+        - generic [ref=e161]:
+          - paragraph [ref=e162]: Report
+          - heading "历史记录" [level=2] [ref=e163]
+        - button "清空" [ref=e164] [cursor=pointer]
+      - paragraph [ref=e166]: 暂无历史记录

@@ -1,0 +1,12 @@
+{
+  "targets": [
+    "m3-gmtool.gm5.games:443",
+    "m503-dev-abtest-online.auto.centurygame.io:443",
+    "m503-dev-abtest-online.auto.centurygame.io:80",
+    "m3-static.akamaized.net:443",
+    "ffm-us-oss.oss-us-east-1.aliyuncs.com:443",
+    "cdp.cloud.unity3d.com:443",
+    "101.32.104.143:443",
+    "13.213.232.253:13321"
+  ]
+}
