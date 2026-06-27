@@ -152,6 +152,8 @@ const launcherConfig = {
   agentPort: "8123",
 };
 
+const SERVICE_STOPPED_MESSAGE = "弱网服务已停止，请点击重启服务，或重新打开弱网控制台.app重新启动服务。";
+
 const state = {
   category: "common",
   selectedKey: "normal",
@@ -185,6 +187,21 @@ const state = {
     limitProfile: null,
     limitMode: "normal",
   },
+  currentEffect: {
+    tone: "info",
+    title: "正常网络",
+    meta: "未施加弱网",
+    profile: null,
+    modeLabel: "未启用",
+    target: "未选择目标",
+  },
+  operation: {
+    tone: "info",
+    title: "等待操作",
+    message: "应用预设或清除弱网后展示结果。",
+    steps: [],
+    expanded: false,
+  },
   gateway: {
     expanded: false,
     filter: "",
@@ -193,6 +210,7 @@ const state = {
     status: null,
     starting: false,
   },
+  serviceStopped: false,
 };
 
 const elements = {
@@ -223,6 +241,15 @@ const elements = {
   deviceSerial: document.getElementById("deviceSerial"),
   deviceStatus: document.getElementById("deviceStatus"),
   deviceNote: document.getElementById("deviceNote"),
+  deviceEffectCard: document.getElementById("deviceEffectCard"),
+  deviceEffectKicker: document.getElementById("deviceEffectKicker"),
+  deviceEffectTitle: document.getElementById("deviceEffectTitle"),
+  deviceEffectMeta: document.getElementById("deviceEffectMeta"),
+  currentEffectStrip: document.getElementById("currentEffectStrip"),
+  currentEffectLabel: document.getElementById("currentEffectLabel"),
+  currentEffectTitle: document.getElementById("currentEffectTitle"),
+  currentEffectMeta: document.getElementById("currentEffectMeta"),
+  currentEffectChips: document.getElementById("currentEffectChips"),
   gatewayScope: document.getElementById("gatewayScope"),
   gatewaySummary: document.getElementById("gatewaySummary"),
   gatewayState: document.getElementById("gatewayState"),
@@ -254,6 +281,7 @@ const elements = {
   applyButton: document.getElementById("applyButton"),
   clearButton: document.getElementById("clearButton"),
   resetButton: document.getElementById("resetButton"),
+  stopServiceButton: document.getElementById("stopServiceButton"),
   copyButton: document.getElementById("copyButton"),
   clearHistoryButton: document.getElementById("clearHistoryButton"),
   deviceIp: document.getElementById("deviceIp"),
@@ -269,6 +297,11 @@ const elements = {
   modeList: document.getElementById("modeList"),
   runtimeMode: document.getElementById("runtimeMode"),
   commandEyebrow: document.getElementById("commandEyebrow"),
+  operationCard: document.getElementById("operationCard"),
+  operationToneDot: document.getElementById("operationToneDot"),
+  operationTitle: document.getElementById("operationTitle"),
+  operationMessage: document.getElementById("operationMessage"),
+  operationSteps: document.getElementById("operationSteps"),
   launcherGate: document.getElementById("launcherGate"),
   launcherMessage: document.getElementById("launcherMessage"),
   launcherStatusText: document.getElementById("launcherStatusText"),
@@ -325,6 +358,66 @@ function getAgentUrl(path = "/") {
   return `${location.protocol}//${host}:${launcherConfig.agentPort}${path}`;
 }
 
+function getLauncherUrl(path = "/") {
+  const host = location.hostname || "127.0.0.1";
+  return `${location.protocol}//${host}:${launcherConfig.port}${path}`;
+}
+
+function isAgentConnectionFailure(error) {
+  return /failed to fetch|load failed|networkerror|network request failed/i.test(String((error && error.message) || error || ""));
+}
+
+function createServiceStoppedError(error) {
+  const stoppedError = new Error(SERVICE_STOPPED_MESSAGE);
+  stoppedError.serviceStopped = true;
+  stoppedError.cause = error;
+  return stoppedError;
+}
+
+function isServiceStoppedError(error) {
+  const raw = String((error && (error.message || error.error)) || error || "");
+  return Boolean(error && error.serviceStopped) || raw.includes(SERVICE_STOPPED_MESSAGE) || isAgentConnectionFailure(raw);
+}
+
+function showServiceStoppedNotice() {
+  state.serviceStopped = true;
+  state.agent.available = false;
+  state.agent.admin = null;
+  state.agent.metricsSource = "none";
+  elements.runtimeMode.textContent = "服务已停止";
+  elements.deviceNote.textContent = SERVICE_STOPPED_MESSAGE;
+  setCurrentEffect({
+    tone: "warn",
+    title: "服务已停止",
+    meta: SERVICE_STOPPED_MESSAGE,
+    profile: null,
+    modeLabel: getNetworkModeLabel(),
+    target: "本机服务",
+  });
+  updateOperationFromSteps({
+    tone: "warn",
+    title: "服务已停止",
+    message: SERVICE_STOPPED_MESSAGE,
+    steps: [],
+  });
+  renderServiceActionButton();
+  renderPerformanceStatus();
+  renderGatewayScope();
+  showToast(SERVICE_STOPPED_MESSAGE, "info", { duration: 7000 });
+}
+
+function requireServiceRunning() {
+  if (!state.serviceStopped) return true;
+  showServiceStoppedNotice();
+  return false;
+}
+
+function handleServiceStoppedError(error) {
+  if (!isServiceStoppedError(error)) return false;
+  showServiceStoppedNotice();
+  return true;
+}
+
 function redirectToAgent(status = state.launcher.status) {
   const target = status && status.agentUrl ? status.agentUrl : getAgentUrl("/");
   window.location.replace(target);
@@ -348,10 +441,17 @@ function setLauncherBusy(busy) {
   if (elements.launcherRetryButton) elements.launcherRetryButton.disabled = busy;
 }
 
+function renderServiceActionButton() {
+  if (!elements.stopServiceButton) return;
+  elements.stopServiceButton.textContent = state.serviceStopped ? "重启服务" : "停止服务";
+  elements.stopServiceButton.classList.toggle("restart", state.serviceStopped);
+  elements.stopServiceButton.disabled = false;
+}
+
 async function fetchLauncherJson(path, options = {}) {
   let response;
   try {
-    response = await fetch(path, {
+    response = await fetch(getLauncherUrl(path), {
       cache: "no-store",
       ...options,
     });
@@ -533,9 +633,7 @@ async function fetchAgentJson(path) {
   try {
     response = await fetch(path, { cache: "no-store" });
   } catch (error) {
-    if (/failed to fetch|load failed|networkerror/i.test(error.message || "")) {
-      throw new Error("本地 Agent 未启动或页面连接已断开，请运行 open-weaknet.command 授权启动后刷新页面");
-    }
+    if (isAgentConnectionFailure(error)) throw createServiceStoppedError(error);
     throw error;
   }
   if (!response.ok) throw new Error(`Agent HTTP ${response.status}`);
@@ -602,7 +700,6 @@ async function assertTrafficPathReady(record, profile) {
     throw new Error("缺少 Android 设备序列号，无法检查流量路径");
   }
 
-  showToast("检查 Android 流量路径", "info");
   const params = new URLSearchParams({
     serial: state.agent.selectedSerial,
     ip: record.deviceIp,
@@ -612,17 +709,21 @@ async function assertTrafficPathReady(record, profile) {
     const detail = data.autoPrepareReason ? `；${data.autoPrepareReason}` : "";
     throw new Error(`Android 流量未经过 Mac：${data.reason}${detail}`);
   }
-  const macIp = data.androidRoute && data.androidRoute.gatewayIp ? data.androidRoute.gatewayIp : "Mac";
-  showToast(`流量路径通过：Android -> ${macIp}`, "success");
   return data;
 }
 
 async function postAgentJson(path, payload) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+  } catch (error) {
+    if (isAgentConnectionFailure(error)) throw createServiceStoppedError(error);
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
     const error = new Error(data.message || data.error || `Agent HTTP ${response.status}`);
@@ -670,6 +771,170 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function getStepStats(steps = []) {
+  const total = Array.isArray(steps) ? steps.length : 0;
+  const passed = total ? steps.filter((step) => step && step.ok).length : 0;
+  return { total, passed };
+}
+
+function formatStepDetail(step) {
+  if (!step) return "";
+  if (step.ok) return "成功";
+  return step.error || step.stderr || step.stdout || "失败";
+}
+
+function summarizeOperation(prefix, steps = []) {
+  const { total, passed } = getStepStats(steps);
+  if (!total) return prefix;
+  return `${prefix} · ${passed}/${total} 成功`;
+}
+
+function getReadableError(error) {
+  const raw = String((error && (error.message || error.error)) || error || "操作失败");
+  if (isServiceStoppedError(error)) return SERVICE_STOPPED_MESSAGE;
+  if (/VPN permission|VPN 授权|needs_permission/i.test(raw)) return "手机还没有同意 VPN 授权，请在手机弹窗中点允许。";
+  if (/missing Android device serial|未发现已授权|缺少 Android 设备序列号/i.test(raw)) return "没有可用 Android 设备，请先刷新设备并确认 USB 调试授权。";
+  if (/invalid targetPackage|有效的目标应用包名|package/i.test(raw)) return "目标包名不正确，请先打开游戏并点击读取前台应用。";
+  if (/管理员权限|sudo|password is required|a terminal is required/i.test(raw)) return "需要管理员授权，请从启动页重新授权弱网服务。";
+  if (/Android 流量未经过 Mac/i.test(raw)) return raw;
+  if (/危险 IP 防护/i.test(raw)) return raw;
+  return raw;
+}
+
+function formatEffectSummary(profile) {
+  if (!profile || profile.presetKey === "normal") return "未施加弱网";
+  return [
+    `RTT ${formatMs(profile.latencyRttMs)}`,
+    `丢包 ${formatLoss(profile.packetLossPercent)}`,
+    `下行 ${formatBandwidth(profile.downloadKbps)}`,
+    `上行 ${formatBandwidth(profile.uploadKbps)}`,
+  ].join(" · ");
+}
+
+function getRecordTarget(record = {}) {
+  if (record.networkMode === "Mac 全局弱网") return "整台 Mac 外网流量";
+  if (record.targetApp && record.targetApp !== "未填写") return record.targetApp;
+  if (record.deviceIp && record.deviceIp !== "未填写") return record.deviceIp;
+  return "未选择目标";
+}
+
+function setCurrentEffect(effect = {}) {
+  state.currentEffect = {
+    ...state.currentEffect,
+    ...effect,
+  };
+  renderCurrentEffect();
+}
+
+function setCurrentEffectFromRecord(record, profile, tone = "ok") {
+  if (!profile || profile.presetKey === "normal") {
+    setCurrentEffect({
+      tone: "ok",
+      title: "正常网络",
+      meta: "未施加弱网",
+      profile: null,
+      modeLabel: record.networkMode || getNetworkModeLabel(),
+      target: getRecordTarget(record),
+    });
+    return;
+  }
+  setCurrentEffect({
+    tone,
+    title: `${profile.displayNameZh} 已生效`,
+    meta: `${record.networkMode || getNetworkModeLabel()} · ${getRecordTarget(record)}`,
+    profile: { ...profile },
+    modeLabel: record.networkMode || getNetworkModeLabel(),
+    target: getRecordTarget(record),
+  });
+}
+
+function renderCurrentEffect() {
+  const effect = state.currentEffect;
+  const toneClasses = ["status-ok", "status-warn", "status-error", "status-info"];
+  if (elements.deviceEffectCard) {
+    elements.deviceEffectCard.classList.remove(...toneClasses);
+    elements.deviceEffectCard.classList.add(`status-${effect.tone || "info"}`);
+  }
+  if (elements.currentEffectStrip) {
+    elements.currentEffectStrip.classList.remove(...toneClasses);
+    elements.currentEffectStrip.classList.add(`status-${effect.tone || "info"}`);
+  }
+  if (elements.deviceEffectKicker) {
+    elements.deviceEffectKicker.textContent = effect.tone === "error" ? "最近状态" : "当前状态";
+  }
+  if (elements.deviceEffectTitle) elements.deviceEffectTitle.textContent = effect.title;
+  if (elements.deviceEffectMeta) elements.deviceEffectMeta.textContent = effect.meta;
+  if (elements.currentEffectLabel) elements.currentEffectLabel.textContent = effect.tone === "error" ? "最近结果" : "当前效果";
+  if (elements.currentEffectTitle) elements.currentEffectTitle.textContent = effect.title;
+  if (elements.currentEffectMeta) elements.currentEffectMeta.textContent = effect.meta;
+  if (elements.currentEffectChips) {
+    const profile = effect.profile;
+    const chips = profile
+      ? [
+          `RTT ${formatMs(profile.latencyRttMs)}`,
+          `丢包 ${formatLoss(profile.packetLossPercent)}`,
+          `下行 ${formatBandwidth(profile.downloadKbps)}`,
+          `上行 ${formatBandwidth(profile.uploadKbps)}`,
+        ]
+      : ["未施加弱网"];
+    elements.currentEffectChips.innerHTML = chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("");
+  }
+}
+
+function setOperationStatus(update = {}) {
+  state.operation = {
+    ...state.operation,
+    ...update,
+    steps: Array.isArray(update.steps) ? update.steps : state.operation.steps,
+  };
+  renderOperationStatus();
+}
+
+function renderOperationStatus() {
+  const operation = state.operation;
+  const tone = operation.tone || "info";
+  const toneClasses = ["status-ok", "status-warn", "status-error", "status-info"];
+  if (elements.operationCard) {
+    elements.operationCard.classList.remove(...toneClasses);
+    elements.operationCard.classList.add(`status-${tone}`);
+  }
+  if (elements.operationTitle) elements.operationTitle.textContent = operation.title;
+  if (elements.operationMessage) elements.operationMessage.textContent = operation.message;
+  const steps = operation.steps || [];
+  if (elements.operationSteps) {
+    elements.operationSteps.hidden = !operation.expanded;
+    if (steps.length) {
+      elements.operationSteps.innerHTML = steps
+        .map(
+          (step) => `
+            <div class="operation-step ${step.ok ? "ok" : "error"}">
+              <span>${escapeHtml(step.label || "操作步骤")}</span>
+              <strong>${escapeHtml(formatStepDetail(step))}</strong>
+            </div>
+          `,
+        )
+        .join("");
+    } else {
+      elements.operationSteps.innerHTML = '<p class="operation-empty">暂无技术步骤。</p>';
+    }
+  }
+  if (elements.copyButton) {
+    elements.copyButton.textContent = operation.expanded ? "收起" : "展开";
+    elements.copyButton.disabled = !steps.length;
+    elements.copyButton.setAttribute("aria-expanded", operation.expanded ? "true" : "false");
+  }
+}
+
+function updateOperationFromSteps({ tone, title, message, steps }) {
+  setOperationStatus({
+    tone,
+    title: summarizeOperation(title, steps),
+    message,
+    steps: steps || [],
+    expanded: false,
+  });
 }
 
 function splitTargetList(value) {
@@ -2049,6 +2314,15 @@ function startNetworkCurve() {
   };
 }
 
+function stopNetworkCurve() {
+  if (state.networkCurve.eventSource) {
+    state.networkCurve.eventSource.close();
+    state.networkCurve.eventSource = null;
+  }
+  window.clearInterval(state.networkCurve.timerId);
+  state.networkCurve.timerId = null;
+}
+
 function setMonitorTab(tab) {
   state.monitorTab = tab;
   const isNetwork = tab === "network";
@@ -2600,6 +2874,9 @@ function renderAll() {
   syncEditorFromProfile();
   renderCommandPreview();
   renderGatewayScope();
+  renderCurrentEffect();
+  renderOperationStatus();
+  renderServiceActionButton();
   renderHistory();
 }
 
@@ -2635,7 +2912,14 @@ function pushHistory(record) {
 async function applyAndroidVpnProfile(record, profile) {
   elements.runtimeMode.textContent = "Android VPN 下发中";
   elements.deviceNote.textContent = `正在通过 Android VPN Agent 下发 ${record.displayNameZh}...`;
-  showToast(`Android VPN：开始下发 ${record.displayNameZh}`, "info");
+  const startTitle = profile.presetKey === "normal" ? "正在恢复正常网络" : `正在应用：${record.displayNameZh}`;
+  setOperationStatus({
+    tone: "info",
+    title: startTitle,
+    message: `${record.networkMode} · ${getRecordTarget(record)}`,
+    steps: [],
+    expanded: false,
+  });
 
   const data = await postAgentJson("/api/android-vpn/apply", {
     serial: state.agent.selectedSerial,
@@ -2646,14 +2930,20 @@ async function applyAndroidVpnProfile(record, profile) {
 
   record.applyMode = data.mode;
   state.agent.androidVpn = data.status || state.agent.androidVpn;
-  elements.runtimeMode.textContent = `${record.displayNameZh} 已下发`;
+  const isNormal = profile.presetKey === "normal";
+  elements.runtimeMode.textContent = isNormal ? "正常网络" : `${record.displayNameZh} 已生效`;
   elements.deviceNote.textContent = data.message || describeAndroidVpnStatus(data.status);
-  showWeaknetStepToasts(data.steps);
-  if (data.status) {
-    showToast(describeAndroidVpnStatus(data.status), data.ok ? "success" : "info", { duration: 5200 });
-  }
   rememberNetworkCurveLimit(profile, data.mode || "android-vpn");
-  showToast(data.message || `${record.displayNameZh} 已通过 Android VPN Agent 下发`, "success", { duration: 5200 });
+  setCurrentEffectFromRecord(record, profile, "ok");
+  updateOperationFromSteps({
+    tone: "ok",
+    title: isNormal ? "清除完成" : "应用完成",
+    message: isNormal ? "Android VPN 已停止，正常网络已恢复。" : `${record.displayNameZh} 已对 ${getRecordTarget(record)} 生效。`,
+    steps: data.steps,
+  });
+  showToast(isNormal ? "已恢复正常网络 · Android VPN 已停止" : `已生效：${record.displayNameZh}`, "success", {
+    duration: 5200,
+  });
   return data;
 }
 
@@ -2666,15 +2956,32 @@ async function applyProfile() {
     renderCommandPreview();
     return;
   }
+  if (!requireServiceRunning()) {
+    renderSummary();
+    renderCommandPreview();
+    return;
+  }
 
   if (isAndroidVpnMode()) {
     elements.runtimeMode.textContent = "准备 Android VPN";
     try {
       await ensureAndroidVpnReady(profile);
     } catch (error) {
+      if (handleServiceStoppedError(error)) {
+        renderSummary();
+        renderCommandPreview();
+        return;
+      }
       elements.runtimeMode.textContent = "准备失败";
       elements.deviceNote.textContent = error.message;
-      showToast(error.message, "error", { duration: 6800 });
+      const readable = getReadableError(error);
+      updateOperationFromSteps({
+        tone: "error",
+        title: "准备失败",
+        message: readable,
+        steps: [],
+      });
+      showToast(`未生效：${readable}`, "error", { duration: 6800 });
       renderSummary();
       renderCommandPreview();
       return;
@@ -2694,15 +3001,40 @@ async function applyProfile() {
     try {
       await applyAndroidVpnProfile(record, profile);
     } catch (error) {
-      showWeaknetStepToasts(error.data && error.data.steps);
+      if (handleServiceStoppedError(error)) {
+        renderSummary();
+        renderCommandPreview();
+        return;
+      }
+      const readable = error.data && error.data.message ? getReadableError(error.data.message) : getReadableError(error);
       if (error.data && error.data.requiresUserAction) {
         elements.runtimeMode.textContent = "等待手机授权";
-        elements.deviceNote.textContent = error.data.message || "请在手机上同意 VPN 权限后再次点击应用预设";
-        showToast(elements.deviceNote.textContent, "info", { duration: 8200 });
+        elements.deviceNote.textContent = readable;
+        updateOperationFromSteps({
+          tone: "warn",
+          title: "等待手机授权",
+          message: readable,
+          steps: error.data.steps,
+        });
+        showToast(`未生效：${readable}`, "info", { duration: 8200 });
       } else {
         elements.runtimeMode.textContent = "下发失败";
-        elements.deviceNote.textContent = `Android VPN 下发失败：${error.message}`;
-        showToast(`Android VPN 下发失败：${error.message}`, "error", { duration: 6800 });
+        elements.deviceNote.textContent = `Android VPN 下发失败：${readable}`;
+        setCurrentEffect({
+          tone: "error",
+          title: "未生效",
+          meta: readable,
+          profile: null,
+          modeLabel: record.networkMode,
+          target: getRecordTarget(record),
+        });
+        updateOperationFromSteps({
+          tone: "error",
+          title: "应用失败",
+          message: readable,
+          steps: error.data && error.data.steps,
+        });
+        showToast(`未生效：${readable}`, "error", { duration: 6800 });
       }
       renderSummary();
       renderCommandPreview();
@@ -2721,9 +3053,21 @@ async function applyProfile() {
       await refreshAdminStatus();
       assertMacUnityTargetReady(profile);
     } catch (error) {
+      if (handleServiceStoppedError(error)) {
+        renderSummary();
+        renderCommandPreview();
+        return;
+      }
       elements.runtimeMode.textContent = "准备失败";
-      elements.deviceNote.textContent = error.message;
-      showToast(error.message, "error", { duration: 6800 });
+      const readable = getReadableError(error);
+      elements.deviceNote.textContent = readable;
+      updateOperationFromSteps({
+        tone: "error",
+        title: "准备失败",
+        message: readable,
+        steps: [],
+      });
+      showToast(`未生效：${readable}`, "error", { duration: 6800 });
       renderSummary();
       renderCommandPreview();
       return;
@@ -2735,9 +3079,21 @@ async function applyProfile() {
     try {
       await ensureWeaknetDeviceReady(profile);
     } catch (error) {
+      if (handleServiceStoppedError(error)) {
+        renderSummary();
+        renderCommandPreview();
+        return;
+      }
       elements.runtimeMode.textContent = "准备失败";
       elements.deviceNote.textContent = error.message;
-      showToast(error.message, "error");
+      const readable = getReadableError(error);
+      updateOperationFromSteps({
+        tone: "error",
+        title: "准备失败",
+        message: readable,
+        steps: [],
+      });
+      showToast(`未生效：${readable}`, "error");
       renderSummary();
       renderCommandPreview();
       return;
@@ -2754,23 +3110,47 @@ async function applyProfile() {
     networkMode: getNetworkModeLabel(),
     performanceSnapshot: getLatestPerformanceSample(),
   };
+  const startTitle = profile.presetKey === "normal" ? "正在恢复正常网络" : `正在应用：${record.displayNameZh}`;
+  setOperationStatus({
+    tone: "info",
+    title: startTitle,
+    message: `${record.networkMode} · ${getRecordTarget(record)}`,
+    steps: [],
+    expanded: false,
+  });
 
   if (isMacGlobalMode()) {
     elements.runtimeMode.textContent = "检查全局模式";
-    showToast("Mac 全局弱网会影响整台 Mac 外网流量", "info", { duration: 6200 });
   } else if (isMacUnityMode()) {
     elements.runtimeMode.textContent = "检查目标";
-    showToast(`检查 Unity 目标：${record.targetApp}`, "info");
   } else {
     elements.runtimeMode.textContent = "检查 IP";
-    showToast(`检查目标 IP：${record.deviceIp}`, "info");
     try {
       await assertWeaknetTargetIpSafe(record.deviceIp, profile);
-      showToast("目标 IP 安全检查通过", "success");
     } catch (error) {
+      if (handleServiceStoppedError(error)) {
+        renderSummary();
+        renderCommandPreview();
+        return;
+      }
       elements.runtimeMode.textContent = "下发已阻止";
-      elements.deviceNote.textContent = error.message;
-      showToast(error.message, "error");
+      const readable = getReadableError(error);
+      elements.deviceNote.textContent = readable;
+      setCurrentEffect({
+        tone: "error",
+        title: "未生效",
+        meta: readable,
+        profile: null,
+        modeLabel: record.networkMode,
+        target: getRecordTarget(record),
+      });
+      updateOperationFromSteps({
+        tone: "error",
+        title: "应用失败",
+        message: readable,
+        steps: [],
+      });
+      showToast(`未生效：${readable}`, "error");
       renderSummary();
       renderCommandPreview();
       return;
@@ -2780,9 +3160,29 @@ async function applyProfile() {
   try {
     await assertTrafficPathReady(record, profile);
   } catch (error) {
+    if (handleServiceStoppedError(error)) {
+      renderSummary();
+      renderCommandPreview();
+      return;
+    }
     elements.runtimeMode.textContent = "下发已阻止";
-    elements.deviceNote.textContent = error.message;
-    showToast(error.message, "error", { duration: 7000 });
+    const readable = getReadableError(error);
+    elements.deviceNote.textContent = readable;
+    setCurrentEffect({
+      tone: "error",
+      title: "未生效",
+      meta: readable,
+      profile: null,
+      modeLabel: record.networkMode,
+      target: getRecordTarget(record),
+    });
+    updateOperationFromSteps({
+      tone: "error",
+      title: "应用失败",
+      message: readable,
+      steps: [],
+    });
+    showToast(`未生效：${readable}`, "error", { duration: 7000 });
     renderSummary();
     renderCommandPreview();
     return;
@@ -2794,7 +3194,6 @@ async function applyProfile() {
     : isMacUnityMode()
       ? `正在下发 ${record.displayNameZh} 到 Mac Unity 仿真目标 ${record.targetApp}...`
       : `正在下发 ${record.displayNameZh} 到 ${record.deviceIp}...`;
-  showToast(`开始下发：${record.displayNameZh}`, "info");
   try {
     const data = await postAgentJson("/api/weaknet/apply", {
       profile,
@@ -2806,15 +3205,41 @@ async function applyProfile() {
     });
     record.applyMode = data.mode;
     rememberNetworkCurveLimit(profile, data.mode || "weaknet");
-    elements.runtimeMode.textContent = `${record.displayNameZh} 已下发`;
+    const isNormal = profile.presetKey === "normal";
+    elements.runtimeMode.textContent = isNormal ? "正常网络" : `${record.displayNameZh} 已生效`;
     elements.deviceNote.textContent = data.message || `${record.displayNameZh} 已下发到 ${record.deviceIp}`;
-    showWeaknetStepToasts(data.steps);
-    showToast(data.message || `${record.displayNameZh} 已下发`, "success", { duration: 4600 });
+    setCurrentEffectFromRecord(record, profile, "ok");
+    updateOperationFromSteps({
+      tone: "ok",
+      title: isNormal ? "清除完成" : "应用完成",
+      message: isNormal ? "正常网络已恢复。" : `${record.displayNameZh} 已对 ${getRecordTarget(record)} 生效。`,
+      steps: data.steps,
+    });
+    showToast(isNormal ? "已恢复正常网络" : `已生效：${record.displayNameZh}`, "success", { duration: 4600 });
   } catch (error) {
+    if (handleServiceStoppedError(error)) {
+      renderSummary();
+      renderCommandPreview();
+      return;
+    }
     elements.runtimeMode.textContent = "下发失败";
-    elements.deviceNote.textContent = `弱网下发失败：${error.message}`;
-    showWeaknetStepToasts(error.data && error.data.steps);
-    showToast(`弱网下发失败：${error.message}`, "error", { duration: 6200 });
+    const readable = getReadableError(error);
+    elements.deviceNote.textContent = `弱网下发失败：${readable}`;
+    setCurrentEffect({
+      tone: "error",
+      title: "未生效",
+      meta: readable,
+      profile: null,
+      modeLabel: record.networkMode,
+      target: getRecordTarget(record),
+    });
+    updateOperationFromSteps({
+      tone: "error",
+      title: "应用失败",
+      message: readable,
+      steps: error.data && error.data.steps,
+    });
+    showToast(`未生效：${readable}`, "error", { duration: 6200 });
     renderSummary();
     renderCommandPreview();
     return;
@@ -2830,6 +3255,10 @@ async function clearWeakNet() {
     renderGatewayScope();
     return;
   }
+  if (!requireServiceRunning()) {
+    renderGatewayScope();
+    return;
+  }
   selectPreset("normal");
 
   state.networkMode = getNetworkMode();
@@ -2837,40 +3266,220 @@ async function clearWeakNet() {
     try {
       const device = await ensureAndroidDeviceSelected();
       elements.runtimeMode.textContent = "清除 Android VPN";
-      showToast("开始清除 Android VPN 弱网", "info");
+      setOperationStatus({
+        tone: "info",
+        title: "正在恢复正常网络",
+        message: "Android VPN Agent · 正在清除手机端弱网",
+        steps: [],
+        expanded: false,
+      });
       const data = await postAgentJson("/api/android-vpn/clear", { serial: device.serial });
       state.agent.androidVpn = data.status || state.agent.androidVpn;
       elements.runtimeMode.textContent = "正常网络";
       elements.deviceNote.textContent = data.message || describeAndroidVpnStatus(data.status);
-      showWeaknetStepToasts(data.steps);
       rememberNetworkCurveLimit(null, "normal");
+      setCurrentEffect({
+        tone: "ok",
+        title: "正常网络",
+        meta: "Android VPN 已停止，未施加弱网",
+        profile: null,
+        modeLabel: "Android VPN Agent",
+        target: elements.targetApp.value.trim() || "目标应用",
+      });
+      updateOperationFromSteps({
+        tone: "ok",
+        title: "清除完成",
+        message: "Android VPN 已停止，正常网络已恢复。",
+        steps: data.steps,
+      });
       renderGatewayScope();
-      showToast(data.message || "Android VPN 弱网已清除", "success");
+      showToast("已恢复正常网络 · Android VPN 已停止", "success");
       await refreshAndroidVpnStatus(false);
     } catch (error) {
+      if (handleServiceStoppedError(error)) {
+        renderGatewayScope();
+        return;
+      }
       elements.runtimeMode.textContent = "清除失败";
-      elements.deviceNote.textContent = `Android VPN 清除失败：${error.message}`;
-      showWeaknetStepToasts(error.data && error.data.steps);
-      showToast(`Android VPN 清除失败：${error.message}`, "error", { duration: 6200 });
+      const readable = getReadableError(error);
+      elements.deviceNote.textContent = `Android VPN 清除失败：${readable}`;
+      updateOperationFromSteps({
+        tone: "error",
+        title: "清除失败",
+        message: readable,
+        steps: error.data && error.data.steps,
+      });
+      showToast(`未恢复：${readable}`, "error", { duration: 6200 });
     }
     return;
   }
 
   elements.runtimeMode.textContent = "正在清除";
-  showToast("开始清除弱网规则", "info");
+  setOperationStatus({
+    tone: "info",
+    title: "正在恢复正常网络",
+    message: `${getNetworkModeLabel()} · 正在清理弱网规则`,
+    steps: [],
+    expanded: false,
+  });
   try {
     const data = await postAgentJson("/api/weaknet/clear", {});
     elements.runtimeMode.textContent = "正常网络";
     elements.deviceNote.textContent = data.message || "弱网规则已清理";
-    showWeaknetStepToasts(data.steps);
     rememberNetworkCurveLimit(null, "normal");
+    setCurrentEffect({
+      tone: "ok",
+      title: "正常网络",
+      meta: "Mac 弱网规则已清理，未施加弱网",
+      profile: null,
+      modeLabel: getNetworkModeLabel(),
+      target: "当前模式",
+    });
+    updateOperationFromSteps({
+      tone: "ok",
+      title: "清除完成",
+      message: "Mac 弱网规则已清理，正常网络已恢复。",
+      steps: data.steps,
+    });
     renderGatewayScope();
-    showToast(data.message || "弱网规则已清理", "success");
+    showToast("已恢复正常网络", "success");
   } catch (error) {
+    if (handleServiceStoppedError(error)) {
+      renderGatewayScope();
+      return;
+    }
     elements.runtimeMode.textContent = "清除失败";
-    elements.deviceNote.textContent = `清除弱网失败：${error.message}`;
-    showWeaknetStepToasts(error.data && error.data.steps);
-    showToast(`清除弱网失败：${error.message}`, "error", { duration: 6200 });
+    const readable = getReadableError(error);
+    elements.deviceNote.textContent = `清除弱网失败：${readable}`;
+    updateOperationFromSteps({
+      tone: "error",
+      title: "清除失败",
+      message: readable,
+      steps: error.data && error.data.steps,
+    });
+    showToast(`未恢复：${readable}`, "error", { duration: 6200 });
+  }
+}
+
+function getStopServiceSteps(data = {}) {
+  const stop = data.stop || data;
+  const androidSteps = stop.androidVpn && Array.isArray(stop.androidVpn.steps) ? stop.androidVpn.steps : [];
+  const weaknetSteps = stop.weaknet && Array.isArray(stop.weaknet.steps) ? stop.weaknet.steps : [];
+  return [...androidSteps, ...weaknetSteps];
+}
+
+async function stopService() {
+  if (state.serviceStopped) {
+    await restartService();
+    return;
+  }
+  if (!isLikelyLocalAgent()) {
+    const message = "请通过本地 Agent 页面停止弱网服务。";
+    showToast(message, "error", { duration: 6200 });
+    return;
+  }
+  const confirmed = window.confirm("停止本机弱网服务？将先恢复正常网络，然后关闭 8123 Agent。");
+  if (!confirmed) return;
+
+  let stopped = false;
+  if (elements.stopServiceButton) elements.stopServiceButton.disabled = true;
+  elements.runtimeMode.textContent = "正在停止服务";
+  setOperationStatus({
+    tone: "info",
+    title: "正在停止服务",
+    message: "正在恢复正常网络并关闭本机弱网 Agent。",
+    steps: [],
+    expanded: false,
+  });
+
+  try {
+    const payload = { serial: isAndroidVpnMode() ? state.agent.selectedSerial || "" : "" };
+    const data = isLauncherPage()
+      ? await fetchLauncherJson("/api/launcher/stop", { method: "POST" })
+      : await postAgentJson("/api/service/stop", payload);
+    stopped = true;
+    stopNetworkCurve();
+    stopMonitoring();
+    state.serviceStopped = true;
+    state.agent.available = false;
+    state.agent.admin = null;
+    state.agent.metricsSource = "none";
+    elements.runtimeMode.textContent = "服务已停止";
+    elements.deviceNote.textContent = SERVICE_STOPPED_MESSAGE;
+    setCurrentEffect({
+      tone: "warn",
+      title: "服务已停止",
+      meta: SERVICE_STOPPED_MESSAGE,
+      profile: null,
+      modeLabel: getNetworkModeLabel(),
+      target: "本机服务",
+    });
+    updateOperationFromSteps({
+      tone: "ok",
+      title: "服务已停止",
+      message: SERVICE_STOPPED_MESSAGE,
+      steps: getStopServiceSteps(data),
+    });
+    renderServiceActionButton();
+    renderPerformanceStatus();
+    renderGatewayScope();
+    showToast(SERVICE_STOPPED_MESSAGE, "info", { duration: 7000 });
+  } catch (error) {
+    const readable = getReadableError(error);
+    elements.runtimeMode.textContent = "停止失败";
+    elements.deviceNote.textContent = `停止服务失败：${readable}`;
+    updateOperationFromSteps({
+      tone: "error",
+      title: "停止失败",
+      message: readable,
+      steps: error.data && getStopServiceSteps(error.data),
+    });
+    showToast(`停止服务失败：${readable}`, "error", { duration: 6800 });
+  } finally {
+    if (elements.stopServiceButton && !stopped) elements.stopServiceButton.disabled = false;
+  }
+}
+
+async function restartService() {
+  if (!isLikelyLocalAgent()) {
+    showToast("请重新打开弱网控制台.app启动服务。", "error", { duration: 6200 });
+    return;
+  }
+
+  if (elements.stopServiceButton) {
+    elements.stopServiceButton.disabled = true;
+    elements.stopServiceButton.textContent = "重启中";
+  }
+  elements.runtimeMode.textContent = "正在重启服务";
+  setOperationStatus({
+    tone: "info",
+    title: "正在重启服务",
+    message: "正在请求 macOS 授权并重新启动弱网服务。",
+    steps: [],
+    expanded: false,
+  });
+
+  try {
+    const result = await fetchLauncherJson("/api/launcher/start", { method: "POST" });
+    state.launcher.status = result;
+    if (result.agentPort) launcherConfig.agentPort = String(result.agentPort);
+    const status = result.agent && result.agent.ready ? result : await waitForLauncherAgentReady();
+    state.serviceStopped = false;
+    showToast("弱网服务已重新启动", "success", { duration: 4200 });
+    setTimeout(() => redirectToAgent(status), 300);
+  } catch (error) {
+    state.serviceStopped = true;
+    const message = "无法自动重启服务，请重新打开弱网控制台.app重新启动服务。";
+    elements.runtimeMode.textContent = "重启失败";
+    elements.deviceNote.textContent = message;
+    updateOperationFromSteps({
+      tone: "error",
+      title: "重启失败",
+      message,
+      steps: [],
+    });
+    showToast(message, "error", { duration: 7000 });
+    renderServiceActionButton();
   }
 }
 
@@ -2990,15 +3599,14 @@ function bindEvents() {
   elements.applyButton.addEventListener("click", applyProfile);
   elements.clearButton.addEventListener("click", clearWeakNet);
   elements.resetButton.addEventListener("click", clearWeakNet);
+  if (elements.stopServiceButton) elements.stopServiceButton.addEventListener("click", stopService);
   elements.startMonitorButton.addEventListener("click", startMonitoring);
   elements.stopMonitorButton.addEventListener("click", stopMonitoring);
   elements.clearHistoryButton.addEventListener("click", clearHistory);
-  elements.copyButton.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(elements.commandPreview.textContent);
-    elements.copyButton.textContent = "已复制";
-    setTimeout(() => {
-      elements.copyButton.textContent = "复制";
-    }, 1200);
+  elements.copyButton.addEventListener("click", () => {
+    if (!state.operation.steps.length) return;
+    state.operation.expanded = !state.operation.expanded;
+    renderOperationStatus();
   });
 
   elements.gatewayToggleButton.addEventListener("click", () => {

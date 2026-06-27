@@ -19,6 +19,7 @@
           <button class="icon-button" id="resetButton" type="button" title="恢复正常网络" aria-label="恢复正常网络">
             <span aria-hidden="true">↺</span>
           </button>
+          <button class="service-stop-button" id="stopServiceButton" type="button">停止服务</button>
         </div>
       </header>
 
@@ -120,6 +121,13 @@
                 <button class="gateway-action" id="gatewayCopyButton" type="button">复制</button>
               </div>
             </section>
+            <section class="device-effect-card" id="deviceEffectCard" aria-live="polite">
+              <div class="device-effect-head">
+                <span id="deviceEffectKicker">当前状态</span>
+                <strong id="deviceEffectTitle">未连接</strong>
+              </div>
+              <p id="deviceEffectMeta">启动本地 Agent 后显示真实弱网状态。</p>
+            </section>
             <p class="device-note" id="deviceNote">请启动本地 Agent 后执行真实弱网操作。</p>
           </div>
         </section>
@@ -146,6 +154,14 @@
                 <span><i class="legend-line up"></i>上行限制 <strong id="networkUpLegend">--</strong></span>
               </div>
             </div>
+            <section class="current-effect-strip" id="currentEffectStrip" aria-live="polite">
+              <div>
+                <span id="currentEffectLabel">当前效果</span>
+                <strong id="currentEffectTitle">正常网络</strong>
+              </div>
+              <p id="currentEffectMeta">未施加弱网</p>
+              <div class="current-effect-chips" id="currentEffectChips"></div>
+            </section>
             <div class="network-chart-wrap">
               <canvas id="networkCurveChart" height="180" aria-label="实时网络曲线"></canvas>
             </div>
@@ -247,12 +263,22 @@
         <section class="panel command-panel" aria-labelledby="command-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow" id="commandEyebrow">Runtime</p>
-              <h2 id="command-title">弱网命令预览</h2>
+              <p class="eyebrow" id="commandEyebrow">Operation</p>
+              <h2 id="command-title">操作详情</h2>
             </div>
-            <button class="ghost-button" id="copyButton" type="button">复制</button>
+            <button class="ghost-button" id="copyButton" type="button">展开</button>
           </div>
-          <pre id="commandPreview"></pre>
+          <section class="operation-card" id="operationCard" aria-live="polite">
+            <div class="operation-summary">
+              <i id="operationToneDot" aria-hidden="true"></i>
+              <div>
+                <strong id="operationTitle">等待操作</strong>
+                <span id="operationMessage">应用预设或清除弱网后展示结果。</span>
+              </div>
+            </div>
+            <div class="operation-steps" id="operationSteps" hidden></div>
+          </section>
+          <pre id="commandPreview" hidden></pre>
         </section>
 
         <section class="panel history-panel" aria-labelledby="history-title">

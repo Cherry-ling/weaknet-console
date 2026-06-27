@@ -16,6 +16,8 @@ const AGENT_LOG = process.env.AGENT_LOG || "/tmp/weaknet-console-agent.log";
 const SERVER_JS = path.join(ROOT, "server.js");
 const RUNTIME_PREFIX = path.join(os.tmpdir(), "weaknet-console-agent-");
 const RUNTIME_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json", "android-agent"];
+const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
+const SOURCE_SIGNATURE = createSourceSignature(ROOT);
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -28,6 +30,9 @@ const mimeTypes = {
 
 function setCommonHeaders(res, type = "application/json; charset=utf-8") {
   res.setHeader("Content-Type", type);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -60,6 +65,18 @@ function appleScriptString(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+function createSourceSignature(root) {
+  return SOURCE_SIGNATURE_ITEMS.map((item) => {
+    const source = path.join(root, item);
+    try {
+      const stat = fs.statSync(source);
+      return `${item}:${stat.size}:${Math.trunc(stat.mtimeMs)}`;
+    } catch {
+      return `${item}:missing`;
+    }
+  }).join("|");
+}
+
 async function findExecutable(name) {
   const result = await run("/bin/zsh", ["-lc", `command -v ${name} || true`], 3000);
   return result.stdout.trim();
@@ -82,15 +99,22 @@ function prepareAgentRuntime() {
   };
 }
 
-function requestJson(port, pathname, timeoutMs = 1600) {
+function requestJson(port, pathname, timeoutMs = 1600, options = {}) {
   return new Promise((resolve) => {
+    const body = options.body ? JSON.stringify(options.body) : "";
     const req = http.request(
       {
         host: AGENT_HOST,
         port,
         path: pathname,
-        method: "GET",
+        method: options.method || "GET",
         timeout: timeoutMs,
+        headers: body
+          ? {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(body),
+            }
+          : undefined,
       },
       (res) => {
         let body = "";
@@ -117,6 +141,7 @@ function requestJson(port, pathname, timeoutMs = 1600) {
     req.on("error", (error) => {
       resolve({ ok: false, statusCode: 0, data: null, error: error.message });
     });
+    if (body) req.write(body);
     req.end();
   });
 }
@@ -136,12 +161,16 @@ async function getAgentStatus() {
   const admin = await requestJson(AGENT_PORT, "/api/admin/status");
   const adminData = admin.data || null;
   const isRoot = Boolean(admin.ok && adminData && adminData.ok && adminData.mode === "root");
+  const agentSignature = health.data && health.data.sourceSignature ? health.data.sourceSignature : "";
+  const stale = agentSignature !== SOURCE_SIGNATURE;
   return {
     running: true,
-    ready: isRoot,
+    ready: isRoot && !stale,
+    stale,
+    expectedSourceSignature: SOURCE_SIGNATURE,
     health: health.data,
     admin: adminData,
-    message: isRoot ? "本机弱网服务已授权" : "8123 已被未授权服务占用",
+    message: stale ? "本机弱网服务版本已过期，需要重新授权启动" : isRoot ? "本机弱网服务已授权" : "8123 已被未授权服务占用",
   };
 }
 
@@ -155,21 +184,38 @@ async function waitForAgentReady(timeoutMs = 10000) {
   return latest;
 }
 
-async function buildAdminStartCommand() {
+async function waitForAgentStopped(timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = await getAgentStatus();
+  while (latest.running && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    latest = await getAgentStatus();
+  }
+  return latest;
+}
+
+async function buildAdminStartCommand({ stopExisting = false } = {}) {
   const adbBin = process.env.ADB || (await findExecutable("adb"));
   const runtime = prepareAgentRuntime();
   const envParts = [`HOST=${shellQuote(AGENT_HOST)}`, `PORT=${shellQuote(String(AGENT_PORT))}`];
   if (adbBin) envParts.push(`ADB=${shellQuote(adbBin)}`);
   envParts.push(`WEAKNET_STARTED_BY_LAUNCHER=1`);
   envParts.push(`WEAKNET_RUNTIME_ROOT=${shellQuote(runtime.root)}`);
+  envParts.push(`WEAKNET_SOURCE_SIGNATURE=${shellQuote(SOURCE_SIGNATURE)}`);
 
-  return [
+  const commands = [
     `cd ${shellQuote(runtime.root)}`,
     `umask 022`,
     `: > ${shellQuote(AGENT_LOG)}`,
     `echo ${shellQuote(`runtime=${runtime.root}`)} >> ${shellQuote(AGENT_LOG)}`,
     `(/usr/bin/env ${envParts.join(" ")} ${shellQuote(NODE_BIN)} ${shellQuote(runtime.server)} >> ${shellQuote(AGENT_LOG)} 2>&1 < /dev/null & echo $! > /tmp/weaknet-console-agent.pid)`,
-  ].join(" && ");
+  ];
+  if (stopExisting) {
+    commands.unshift(
+      `old_pids="$(/usr/sbin/lsof -nP -tiTCP:${shellQuote(String(AGENT_PORT))} -sTCP:LISTEN 2>/dev/null || true)"; if [ -n "$old_pids" ]; then /bin/kill -TERM $old_pids || true; for i in {1..30}; do /usr/sbin/lsof -nP -iTCP:${shellQuote(String(AGENT_PORT))} -sTCP:LISTEN >/dev/null 2>&1 || break; /bin/sleep 0.2; done; fi`,
+    );
+  }
+  return commands.join(" && ");
 }
 
 async function startAgentWithAuthorization() {
@@ -177,7 +223,7 @@ async function startAgentWithAuthorization() {
   if (before.ready) {
     return { ok: true, alreadyRunning: true, agent: before };
   }
-  if (before.running && !before.ready) {
+  if (before.running && !before.ready && !before.stale) {
     return {
       ok: false,
       error: "端口 8123 已被未授权服务占用。请先停止旧服务，再通过启动页重新授权。",
@@ -185,7 +231,7 @@ async function startAgentWithAuthorization() {
     };
   }
 
-  const shellCommand = await buildAdminStartCommand();
+  const shellCommand = await buildAdminStartCommand({ stopExisting: Boolean(before.running && before.stale) });
   const appleScript = `do shell script ${appleScriptString(shellCommand)} with administrator privileges`;
   const result = await run("osascript", ["-e", appleScript], 5 * 60 * 1000);
   if (!result.ok) {
@@ -206,6 +252,51 @@ async function startAgentWithAuthorization() {
     };
   }
   return { ok: true, agent };
+}
+
+function buildAdminStopCommand() {
+  return [
+    `old_pids="$(/usr/sbin/lsof -nP -tiTCP:${shellQuote(String(AGENT_PORT))} -sTCP:LISTEN 2>/dev/null || true)"`,
+    `if [ -n "$old_pids" ]; then /bin/kill -TERM $old_pids || true; fi`,
+    `for i in {1..30}; do /usr/sbin/lsof -nP -iTCP:${shellQuote(String(AGENT_PORT))} -sTCP:LISTEN >/dev/null 2>&1 || exit 0; /bin/sleep 0.2; done`,
+  ].join(" && ");
+}
+
+async function stopAgentWithAuthorization() {
+  const before = await getAgentStatus();
+  if (!before.running) {
+    return { ok: true, alreadyStopped: true, agent: before, message: "本机弱网服务未运行" };
+  }
+
+  const stopResult = await requestJson(AGENT_PORT, "/api/service/stop", 15000, { method: "POST", body: {} });
+  if (stopResult.ok && stopResult.data && stopResult.data.ok !== false) {
+    const agent = await waitForAgentStopped();
+    return {
+      ok: !agent.running,
+      agent,
+      stop: stopResult.data,
+      message: agent.running ? "已请求停止服务，但 Agent 尚未退出" : "本机弱网服务已停止",
+    };
+  }
+
+  const appleScript = `do shell script ${appleScriptString(buildAdminStopCommand())} with administrator privileges`;
+  const result = await run("osascript", ["-e", appleScript], 5 * 60 * 1000);
+  if (!result.ok) {
+    const canceled = /User canceled|用户已取消|-128/.test(result.stderr || result.error || result.stdout);
+    return {
+      ok: false,
+      canceled,
+      error: canceled ? "已取消管理员授权" : result.stderr.trim() || result.error || "停止服务失败",
+      agent: before,
+    };
+  }
+
+  const agent = await waitForAgentStopped();
+  return {
+    ok: !agent.running,
+    agent,
+    message: agent.running ? "停止命令已执行，但 Agent 尚未退出" : "本机弱网服务已停止",
+  };
 }
 
 function serveStatic(req, res, pathname) {
@@ -268,6 +359,16 @@ const server = http.createServer(async (req, res) => {
       },
       result.ok ? 200 : result.canceled ? 409 : 500,
     );
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/launcher/stop") {
+    if (req.method !== "POST") {
+      sendJson(res, { ok: false, error: "method not allowed" }, 405);
+      return;
+    }
+    const result = await stopAgentWithAuthorization();
+    sendJson(res, result, result.ok ? 200 : result.canceled ? 409 : 500);
     return;
   }
 

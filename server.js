@@ -20,6 +20,7 @@ const PIPE_DOWN = 61001;
 const PIPE_UP = 61002;
 const SOCKS_PORT = Number(process.env.SOCKS_PORT || 8124);
 const MAC_UNITY_TARGETS_FILE = path.join(ROOT, "mac-unity-targets.json");
+const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const ANDROID_VPN_AGENT = {
   packageName: "com.weaknet.agent",
   versionCode: 8,
@@ -69,8 +70,27 @@ const mimeTypes = {
   ".svg": "image/svg+xml",
 };
 
+function createSourceSignature(root) {
+  return SOURCE_SIGNATURE_ITEMS.map((item) => {
+    const source = path.join(root, item);
+    try {
+      const stat = fs.statSync(source);
+      return `${item}:${stat.size}:${Math.trunc(stat.mtimeMs)}`;
+    } catch {
+      return `${item}:missing`;
+    }
+  }).join("|");
+}
+
+function getSourceSignature() {
+  return process.env.WEAKNET_SOURCE_SIGNATURE || createSourceSignature(ROOT);
+}
+
 function setCommonHeaders(res, type = "application/json; charset=utf-8") {
   res.setHeader("Content-Type", type);
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -2154,6 +2174,47 @@ async function clearWeaknetRules() {
   return buildWeaknetResponse("normal", "弱网规则已清理", steps, { privilege });
 }
 
+async function stopService(body = {}) {
+  const serial = String(body.serial || "").trim();
+  let androidVpn = null;
+  if (serial) {
+    try {
+      androidVpn = await clearAndroidVpn({ serial });
+    } catch (error) {
+      androidVpn = {
+        ok: false,
+        mode: "android-vpn-clear",
+        message: "Android VPN 清除失败",
+        error: error.message,
+        steps: publicizeSteps(error.steps || []),
+      };
+    }
+  }
+
+  let weaknet = null;
+  try {
+    weaknet = await clearWeaknetRules();
+  } catch (error) {
+    weaknet = {
+      ok: false,
+      mode: "normal",
+      message: "Mac 弱网规则清理失败",
+      error: error.message,
+      steps: publicizeSteps(error.steps || []),
+    };
+  }
+
+  const ok = Boolean(weaknet && weaknet.ok && (!androidVpn || androidVpn.ok));
+  return {
+    ok,
+    stopping: ok,
+    mode: "service-stop",
+    message: ok ? "本机弱网服务正在停止" : "停止服务前清理失败",
+    weaknet,
+    androidVpn,
+  };
+}
+
 async function applyMacUnityWeaknet(request, privilege) {
   const { profile } = request;
   const targets = profile.presetKey === "normal" ? [] : await resolveMacUnityTargets(request.targetEndpoint);
@@ -2358,7 +2419,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (requestUrl.pathname === "/api/health") {
-    sendJson(res, { ok: true, adb: ADB, host: HOST, port: PORT });
+    sendJson(res, {
+      ok: true,
+      adb: ADB,
+      host: HOST,
+      port: PORT,
+      pid: process.pid,
+      runtimeRoot: process.env.WEAKNET_RUNTIME_ROOT || ROOT,
+      sourceSignature: getSourceSignature(),
+    });
     return;
   }
 
@@ -2516,6 +2585,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/service/stop") {
+    if (req.method !== "POST") {
+      sendJson(res, { ok: false, error: "method not allowed" }, 405);
+      return;
+    }
+    const result = await stopService(await readJsonBody(req));
+    sendJson(res, result, result.ok ? 200 : 500);
+    if (result.ok) stopProcessAfterResponse();
+    return;
+  }
+
   if (requestUrl.pathname === "/api/network/status") {
     try {
       sendJson(res, await getNetworkCurveStatus());
@@ -2607,6 +2687,16 @@ server.listen(PORT, HOST, () => {
 });
 
 let shuttingDown = false;
+
+function stopProcessAfterResponse() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  setTimeout(() => {
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1000).unref();
+  }, 120).unref();
+}
+
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
