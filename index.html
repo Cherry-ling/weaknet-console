@@ -230,6 +230,24 @@
             <p id="selectedScene">不施加弱网</p>
           </div>
 
+          <section class="network-wave-row" id="networkWaveRow" aria-label="网络波动模式">
+            <div class="network-wave-label">
+              <span>网络波动模式</span>
+              <button class="network-wave-tip" type="button" aria-label="网络波动模式说明">?
+                <span class="network-wave-tip-bubble" role="tooltip">
+                  模拟地铁/电梯场景，网速随机跳跃<br />
+                  下行50K~3M，上行20K~1M，延迟30~800mS
+                </span>
+              </button>
+            </div>
+            <strong id="networkWaveModeLabel">地铁/电梯随机波动</strong>
+            <label class="network-wave-switch">
+              <input id="networkWaveToggle" type="checkbox" />
+              <i aria-hidden="true"></i>
+              <em id="networkWaveState">已关闭</em>
+            </label>
+          </section>
+
           <div class="metrics-grid" id="metricsGrid"></div>
 
           <form class="advanced-editor" id="advancedEditor" aria-label="高级参数">

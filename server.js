@@ -19,6 +19,38 @@ const WEAKNET_ANCHOR = "weaknet_lab";
 const PIPE_DOWN = 61001;
 const PIPE_UP = 61002;
 const SOCKS_PORT = Number(process.env.SOCKS_PORT || 8124);
+const NETWORK_WAVE_CONFIG = {
+  mode: "subway-elevator",
+  initial: {
+    downloadKbps: 500,
+    uploadKbps: 200,
+    pipeDelayMs: 100,
+    packetLossPercent: 2,
+  },
+  normal: {
+    downloadMinKbps: 50,
+    downloadMaxKbps: 3000,
+    uploadMinKbps: 20,
+    uploadMaxKbps: 1000,
+    delayMinMs: 30,
+    delayMaxMs: 400,
+    packetLossMinPercent: 0,
+    packetLossMaxPercent: 5,
+  },
+  signalLost: {
+    chance: 0.15,
+    downloadMinKbps: 5,
+    downloadMaxKbps: 30,
+    uploadMinKbps: 2,
+    uploadMaxKbps: 15,
+    delayMinMs: 500,
+    delayMaxMs: 1200,
+    packetLossMinPercent: 10,
+    packetLossMaxPercent: 30,
+  },
+  intervalMinMs: 800,
+  intervalMaxMs: 2000,
+};
 const MAC_UNITY_TARGETS_FILE = path.join(ROOT, "mac-unity-targets.json");
 const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const ANDROID_VPN_AGENT = {
@@ -44,6 +76,7 @@ const weaknetRuntime = {
   blocked: false,
   active: false,
   activeProfile: null,
+  currentPipeProfile: null,
   activeMode: "normal",
 };
 
@@ -1137,6 +1170,7 @@ function clampNumber(value, min, max, fallback) {
 }
 
 function inferWeaknetDisconnectMode(profile) {
+  if (profile.networkWave && profile.networkWave.enabled) return "none";
   if (profile.presetKey === "normal") return "none";
   if (
     profile.disconnectMode === "always" ||
@@ -1154,6 +1188,13 @@ function inferWeaknetDisconnectMode(profile) {
 
 function isMacLocalWeaknetScope(targetScope) {
   return targetScope === "mac-unity" || targetScope === "mac-global";
+}
+
+function normalizeNetworkWave(sourceWave = {}) {
+  return {
+    enabled: Boolean(sourceWave && sourceWave.enabled),
+    mode: String((sourceWave && sourceWave.mode) || NETWORK_WAVE_CONFIG.mode),
+  };
 }
 
 function normalizeWeaknetRequest(body) {
@@ -1176,6 +1217,7 @@ function normalizeWeaknetRequest(body) {
     disconnectMode: String(sourceProfile.disconnectMode || "none"),
     disconnectDurationSec: clampNumber(sourceProfile.disconnectDurationSec, 0, 3600, 0),
     disconnectIntervalSec: clampNumber(sourceProfile.disconnectIntervalSec, 0, 3600, 0),
+    networkWave: normalizeNetworkWave(sourceProfile.networkWave),
   };
   profile.disconnectMode = inferWeaknetDisconnectMode(profile);
 
@@ -1203,6 +1245,7 @@ function normalizeAndroidVpnRequest(body) {
     disconnectMode: String(sourceProfile.disconnectMode || "none"),
     disconnectDurationSec: clampNumber(sourceProfile.disconnectDurationSec, 0, 3600, 0),
     disconnectIntervalSec: clampNumber(sourceProfile.disconnectIntervalSec, 0, 3600, 0),
+    networkWave: normalizeNetworkWave(sourceProfile.networkWave),
   };
   profile.disconnectMode = inferWeaknetDisconnectMode(profile);
 
@@ -1654,6 +1697,52 @@ function getDynamicDelay(profile) {
   return Math.round(min + Math.random() * (max - min));
 }
 
+function isNetworkWaveEnabled(profile) {
+  return Boolean(profile && profile.networkWave && profile.networkWave.enabled);
+}
+
+function randomInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function randomFloat(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function buildNetworkWavePipeProfile(profile, initial = false) {
+  const source = initial
+    ? NETWORK_WAVE_CONFIG.initial
+    : Math.random() < NETWORK_WAVE_CONFIG.signalLost.chance
+      ? NETWORK_WAVE_CONFIG.signalLost
+      : NETWORK_WAVE_CONFIG.normal;
+
+  if (initial) {
+    return {
+      ...profile,
+      downloadKbps: source.downloadKbps,
+      uploadKbps: source.uploadKbps,
+      packetLossPercent: source.packetLossPercent,
+      pipeDelayMs: source.pipeDelayMs,
+      networkWave: { enabled: true, mode: NETWORK_WAVE_CONFIG.mode },
+    };
+  }
+
+  return {
+    ...profile,
+    downloadKbps: randomInt(source.downloadMinKbps, source.downloadMaxKbps),
+    uploadKbps: randomInt(source.uploadMinKbps, source.uploadMaxKbps),
+    packetLossPercent: Number(randomFloat(source.packetLossMinPercent, source.packetLossMaxPercent).toFixed(2)),
+    pipeDelayMs: randomInt(source.delayMinMs, source.delayMaxMs),
+    networkWave: { enabled: true, mode: NETWORK_WAVE_CONFIG.mode },
+  };
+}
+
+function getPipeDelay(profile) {
+  const pipeDelay = Number(profile && profile.pipeDelayMs);
+  if (Number.isFinite(pipeDelay)) return pipeDelay;
+  return getDynamicDelay(profile);
+}
+
 function buildPipeArgs(pipeId, bandwidthKbps, delayMs, plr) {
   const args = ["pipe", String(pipeId), "config"];
   if (bandwidthKbps !== null && bandwidthKbps !== undefined) {
@@ -1702,21 +1791,28 @@ async function getNetworkCurveStatus() {
   const [downPipe, upPipe] = await Promise.all([readPipeBandwidth(PIPE_DOWN), readPipeBandwidth(PIPE_UP)]);
   const permissionDenied = /Operation not permitted|permission/i.test(`${downPipe.error}\n${upPipe.error}`);
   const profile = weaknetRuntime.activeProfile || {};
-  const profileDown = weaknetRuntime.active ? bandwidthFromKbps(profile.downloadKbps) : null;
-  const profileUp = weaknetRuntime.active ? bandwidthFromKbps(profile.uploadKbps) : null;
+  const statusProfile = weaknetRuntime.currentPipeProfile || profile;
+  const profileDown = weaknetRuntime.active ? bandwidthFromKbps(statusProfile.downloadKbps) : null;
+  const profileUp = weaknetRuntime.active ? bandwidthFromKbps(statusProfile.uploadKbps) : null;
   const downBandwidth = profileDown || downPipe.bandwidth;
   const upBandwidth = profileUp || upPipe.bandwidth;
   const active = weaknetRuntime.active || Boolean(downBandwidth || upBandwidth);
   const blocked = active && weaknetRuntime.blocked;
   const downKbps = blocked ? 0 : downBandwidth ? downBandwidth.kbps : 0;
   const upKbps = blocked ? 0 : upBandwidth ? upBandwidth.kbps : 0;
+  const pipeDelayMs = Number(statusProfile.pipeDelayMs);
+  const packetLossPercent = Number(statusProfile.packetLossPercent);
+  const networkWave = isNetworkWaveEnabled(profile);
 
   return {
     ok: !permissionDenied,
     active,
     blocked,
     permissionDenied,
-    jitter: Boolean(weaknetRuntime.jitterInterval),
+    jitter: Boolean(weaknetRuntime.jitterInterval) || networkWave,
+    networkWave: networkWave ? { enabled: true, mode: profile.networkWave.mode || NETWORK_WAVE_CONFIG.mode } : { enabled: false },
+    pipeDelayMs: active && Number.isFinite(pipeDelayMs) ? pipeDelayMs : null,
+    packetLossPercent: active && Number.isFinite(packetLossPercent) ? packetLossPercent : null,
     mode: weaknetRuntime.activeMode,
     timestamp: Date.now(),
     download: active && downBandwidth && !blocked ? { value: downBandwidth.value, unit: downBandwidth.unit } : null,
@@ -2051,6 +2147,9 @@ function buildWeaknetResponse(mode, message, steps, extra = {}) {
 function rememberWeaknetProfile(profile, mode) {
   weaknetRuntime.active = true;
   weaknetRuntime.activeProfile = profile ? { ...profile } : null;
+  if (!isNetworkWaveEnabled(profile)) {
+    weaknetRuntime.currentPipeProfile = null;
+  }
   weaknetRuntime.activeMode = mode || "weaknet";
 }
 
@@ -2059,16 +2158,19 @@ function stopWeaknetTimers() {
   weaknetRuntime.blocked = false;
   clearInterval(weaknetRuntime.periodicInterval);
   clearInterval(weaknetRuntime.jitterInterval);
+  clearTimeout(weaknetRuntime.jitterInterval);
   clearTimeout(weaknetRuntime.periodicTimeout);
   weaknetRuntime.periodicInterval = null;
   weaknetRuntime.jitterInterval = null;
   weaknetRuntime.periodicTimeout = null;
+  weaknetRuntime.currentPipeProfile = null;
 }
 
 async function runClearWeaknetSteps() {
   stopWeaknetTimers();
   weaknetRuntime.active = false;
   weaknetRuntime.activeProfile = null;
+  weaknetRuntime.currentPipeProfile = null;
   weaknetRuntime.activeMode = "normal";
   return [
     await runPrivileged("清理 pf anchor", PFCTL, ["-a", WEAKNET_ANCHOR, "-F", "all"], { timeoutMs: 8000 }),
@@ -2111,14 +2213,20 @@ async function loadAnchorRules(label, rules) {
   });
 }
 
-async function configureWeaknetPipes(profile) {
-  const plr = Math.min(1, Math.max(0, Number(profile.packetLossPercent || 0) / 100));
-  const delayMs = getDynamicDelay(profile);
+async function configureWeaknetPipes(profile, options = {}) {
+  const effectiveProfile = isNetworkWaveEnabled(profile)
+    ? buildNetworkWavePipeProfile(profile, options.initial || !weaknetRuntime.currentPipeProfile)
+    : profile;
+  if (isNetworkWaveEnabled(profile)) {
+    weaknetRuntime.currentPipeProfile = { ...effectiveProfile };
+  }
+  const plr = Math.min(1, Math.max(0, Number(effectiveProfile.packetLossPercent || 0) / 100));
+  const delayMs = getPipeDelay(effectiveProfile);
   return [
-    await runPrivileged("配置下行 pipe", DNCTL, buildPipeArgs(PIPE_DOWN, profile.downloadKbps, delayMs, plr), {
+    await runPrivileged("配置下行 pipe", DNCTL, buildPipeArgs(PIPE_DOWN, effectiveProfile.downloadKbps, delayMs, plr), {
       timeoutMs: 8000,
     }),
-    await runPrivileged("配置上行 pipe", DNCTL, buildPipeArgs(PIPE_UP, profile.uploadKbps, delayMs, plr), {
+    await runPrivileged("配置上行 pipe", DNCTL, buildPipeArgs(PIPE_UP, effectiveProfile.uploadKbps, delayMs, plr), {
       timeoutMs: 8000,
     }),
   ];
@@ -2138,7 +2246,17 @@ function startWeaknetTimers(profile, deviceIp, rules = {}) {
   const blockRules = rules.block || (() => buildBlockRules(deviceIp));
   const killStates = rules.killStates || (async () => []);
 
-  if (usesShaping && profile.jitterMs > 0 && getOneWayDelay(profile) !== null) {
+  if (usesShaping && isNetworkWaveEnabled(profile)) {
+    const scheduleNetworkWaveTick = () => {
+      const waitMs = randomInt(NETWORK_WAVE_CONFIG.intervalMinMs, NETWORK_WAVE_CONFIG.intervalMaxMs);
+      weaknetRuntime.jitterInterval = setTimeout(async () => {
+        if (weaknetRuntime.generation !== generation || weaknetRuntime.blocked) return;
+        logTimerFailure("网络波动重配", await configureWeaknetPipes(profile, { initial: false }));
+        if (weaknetRuntime.generation === generation) scheduleNetworkWaveTick();
+      }, waitMs);
+    };
+    scheduleNetworkWaveTick();
+  } else if (usesShaping && profile.jitterMs > 0 && getOneWayDelay(profile) !== null) {
     weaknetRuntime.jitterInterval = setInterval(async () => {
       if (weaknetRuntime.generation !== generation || weaknetRuntime.blocked) return;
       logTimerFailure("动态抖动重配", await configureWeaknetPipes(profile));

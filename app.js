@@ -154,6 +154,14 @@ const launcherConfig = {
 
 const SERVICE_STOPPED_MESSAGE = "弱网服务已停止，请点击重启服务，或重新打开弱网控制台.app重新启动服务。";
 const SERVICE_UNAVAILABLE_EFFECT_MESSAGE = "Agent 已停止，无法采集或施加弱网。";
+const NETWORK_WAVE_MODE = {
+  key: "subway-elevator",
+  displayNameZh: "网络波动模式",
+  scene: "地铁/电梯随机波动",
+  description: "模拟地铁/电梯场景，网速随机跳跃",
+  rangeLabel: "下行 50K~3M · 上行 20K~1M · 延迟 30~800mS",
+  chips: ["波动中", "地铁/电梯", "下行 50K~3M", "上行 20K~1M", "延迟 30~800mS"],
+};
 
 const state = {
   category: "common",
@@ -187,6 +195,9 @@ const state = {
     timerId: null,
     limitProfile: null,
     limitMode: "normal",
+  },
+  networkWave: {
+    enabled: false,
   },
   currentEffect: {
     tone: "info",
@@ -270,6 +281,9 @@ const elements = {
   presetGrid: document.getElementById("presetGrid"),
   selectedName: document.getElementById("selectedName"),
   selectedScene: document.getElementById("selectedScene"),
+  networkWaveRow: document.getElementById("networkWaveRow"),
+  networkWaveToggle: document.getElementById("networkWaveToggle"),
+  networkWaveState: document.getElementById("networkWaveState"),
   metricsGrid: document.getElementById("metricsGrid"),
   advancedToggle: document.getElementById("advancedToggle"),
   advancedEditor: document.getElementById("advancedEditor"),
@@ -795,6 +809,7 @@ function getReadableError(error) {
 
 function formatEffectSummary(profile) {
   if (!profile || profile.presetKey === "normal") return "未施加弱网";
+  if (isNetworkWaveProfile(profile)) return NETWORK_WAVE_MODE.rangeLabel;
   return [
     `RTT ${formatMs(profile.latencyRttMs)}`,
     `丢包 ${formatLoss(profile.packetLossPercent)}`,
@@ -808,6 +823,51 @@ function getRecordTarget(record = {}) {
   if (record.targetApp && record.targetApp !== "未填写") return record.targetApp;
   if (record.deviceIp && record.deviceIp !== "未填写") return record.deviceIp;
   return "未选择目标";
+}
+
+function isNetworkWaveEnabled() {
+  return Boolean(elements.networkWaveToggle && elements.networkWaveToggle.checked);
+}
+
+function isNetworkWaveProfile(profile = {}) {
+  return Boolean(profile.networkWave && profile.networkWave.enabled);
+}
+
+function renderNetworkWaveControl() {
+  state.networkWave.enabled = isNetworkWaveEnabled();
+  if (elements.networkWaveRow) {
+    elements.networkWaveRow.classList.toggle("active", state.networkWave.enabled);
+  }
+  if (elements.networkWaveState) {
+    elements.networkWaveState.textContent = state.networkWave.enabled ? "已开启" : "已关闭";
+  }
+}
+
+function getProfileForApply() {
+  const profile = cloneProfile(state.activeProfile);
+  if (!isNetworkWaveEnabled()) {
+    profile.networkWave = { enabled: false, mode: NETWORK_WAVE_MODE.key };
+    return profile;
+  }
+
+  return {
+    ...profile,
+    presetKey: profile.presetKey === "normal" ? "network_wave" : profile.presetKey,
+    displayNameZh: profile.presetKey === "normal" ? NETWORK_WAVE_MODE.displayNameZh : `${profile.displayNameZh} + 网络波动`,
+    scene: profile.presetKey === "normal" ? NETWORK_WAVE_MODE.scene : `${profile.scene} · ${NETWORK_WAVE_MODE.scene}`,
+    latencyRttMs: 100,
+    jitterMs: 0,
+    packetLossPercent: 2,
+    downloadKbps: 500,
+    uploadKbps: 200,
+    disconnectMode: "none",
+    disconnectDurationSec: 0,
+    disconnectIntervalSec: 0,
+    networkWave: {
+      enabled: true,
+      mode: NETWORK_WAVE_MODE.key,
+    },
+  };
 }
 
 function setCurrentEffect(effect = {}) {
@@ -849,6 +909,18 @@ function getApplyOperationDoneMessage(profile) {
 }
 
 function setCurrentEffectFromRecord(record, profile, tone = "ok") {
+  if (isNetworkWaveProfile(profile)) {
+    setCurrentEffect({
+      tone,
+      title: "网络波动 已生效",
+      meta: `${record.networkMode || getNetworkModeLabel()} · ${NETWORK_WAVE_MODE.scene}`,
+      profile: { ...profile },
+      modeLabel: record.networkMode || getNetworkModeLabel(),
+      target: getRecordTarget(record),
+      chips: NETWORK_WAVE_MODE.chips,
+    });
+    return;
+  }
   if (!profile || profile.presetKey === "normal") {
     setCurrentEffect({
       tone: "ok",
@@ -1467,6 +1539,18 @@ function formatMs(value) {
 
 function formatLoss(value) {
   return `${Number(value).toFixed(value % 1 === 0 ? 0 : 1)}%`;
+}
+
+function pushNetworkWaveCommandNotes(lines, profile) {
+  if (!isNetworkWaveProfile(profile)) return;
+  lines.push(
+    "",
+    "# 网络波动模式：照搬弱网工具.app 的 start_jitter() 逻辑",
+    "# 初始 pipe：下行 500Kbit/s，上行 200Kbit/s，延迟 100ms，丢包 2%",
+    "# 后台每 0.8-2s 随机重配 dnctl pipe",
+    "# 常规波动：下行 50K~3M，上行 20K~1M，延迟 30~400ms，丢包 0~5%",
+    "# 15% 信号丢失：下行 5~30K，上行 2~15K，延迟 500~1200ms，丢包 10~30%",
+  );
 }
 
 function formatPercent(value) {
@@ -2174,6 +2258,30 @@ function formatNetworkCurveSpeed(kbps) {
   return `${Math.round(kbps)} Kbps`;
 }
 
+function getNetworkWaveRealtimeChips(status, downKbps, upKbps, profile = {}) {
+  const chips = ["波动中", `下行 ${formatNetworkCurveSpeed(downKbps)}`, `上行 ${formatNetworkCurveSpeed(upKbps)}`];
+  const rawDelayMs = status && status.pipeDelayMs !== null && status.pipeDelayMs !== undefined
+    ? status.pipeDelayMs
+    : profile.latencyRttMs;
+  const rawPacketLossPercent = status && status.packetLossPercent !== null && status.packetLossPercent !== undefined
+    ? status.packetLossPercent
+    : profile.packetLossPercent;
+  const delayMs = Number(rawDelayMs);
+  const packetLossPercent = Number(rawPacketLossPercent);
+  if (Number.isFinite(delayMs)) chips.push(`延迟 ${formatMs(Math.round(delayMs))}`);
+  if (Number.isFinite(packetLossPercent)) chips.push(`丢包 ${formatLoss(packetLossPercent)}`);
+  return chips;
+}
+
+function updateNetworkWaveCurrentEffect(status, downKbps, upKbps) {
+  if (!state.currentEffect.profile || !isNetworkWaveProfile(state.currentEffect.profile)) return;
+  state.currentEffect = {
+    ...state.currentEffect,
+    chips: getNetworkWaveRealtimeChips(status, downKbps, upKbps, state.currentEffect.profile),
+  };
+  renderCurrentEffect();
+}
+
 function getNetworkCurveTimestamp(timestamp = Date.now()) {
   return new Date(timestamp).toLocaleTimeString("zh-CN", { hour12: false });
 }
@@ -2207,13 +2315,15 @@ function buildNetworkCurveStatusFromProfile(profile, mode = "local") {
     };
   }
   const blocked = isNetworkCurveProfileBlocked(profile);
+  const dynamicWave = isNetworkWaveProfile(profile);
   return {
     ok: true,
     active: true,
     blocked,
     timestamp: Date.now(),
-    downKbps: blocked ? 0 : getProfileLimitKbps(profile, "downloadKbps"),
-    upKbps: blocked ? 0 : getProfileLimitKbps(profile, "uploadKbps"),
+    downKbps: blocked ? 0 : dynamicWave ? 500 : getProfileLimitKbps(profile, "downloadKbps"),
+    upKbps: blocked ? 0 : dynamicWave ? 200 : getProfileLimitKbps(profile, "uploadKbps"),
+    jitter: dynamicWave,
     mode,
     source: "profile",
   };
@@ -2233,17 +2343,22 @@ function rememberNetworkCurveLimit(profile, mode = "local") {
 function pushNetworkCurvePoint(status) {
   const localProfile = state.networkCurve.limitProfile;
   const localBlocked = localProfile && isNetworkCurveProfileBlocked(localProfile);
+  const localWave = localProfile && isNetworkWaveProfile(localProfile);
   const blocked = Boolean(status.blocked || localBlocked);
   const downKbps = blocked
     ? 0
-    : localProfile
+    : localProfile && !localWave
       ? getProfileLimitKbps(localProfile, "downloadKbps")
-      : Math.max(0, Number(status.downKbps || 0));
+      : localWave
+        ? Math.max(0, Number(status.downKbps || getProfileLimitKbps(localProfile, "downloadKbps") || 0))
+        : Math.max(0, Number(status.downKbps || 0));
   const upKbps = blocked
     ? 0
-    : localProfile
+    : localProfile && !localWave
       ? getProfileLimitKbps(localProfile, "uploadKbps")
-      : Math.max(0, Number(status.upKbps || 0));
+      : localWave
+        ? Math.max(0, Number(status.upKbps || getProfileLimitKbps(localProfile, "uploadKbps") || 0))
+        : Math.max(0, Number(status.upKbps || 0));
   const active = Boolean(localProfile || status.active);
   state.networkCurve.samples.push({
     time: status.timestamp || Date.now(),
@@ -2262,10 +2377,11 @@ function pushNetworkCurvePoint(status) {
   } else if (blocked) {
     elements.networkCurveStatus.textContent = "阻断中";
   } else if (active) {
-    elements.networkCurveStatus.textContent = status.jitter ? "波动中" : "限制生效";
+    elements.networkCurveStatus.textContent = status.jitter || localWave ? "波动中" : "限制生效";
   } else {
     elements.networkCurveStatus.textContent = "未启用";
   }
+  if (localWave) updateNetworkWaveCurrentEffect(status, downKbps, upKbps);
   drawNetworkCurveChart();
 }
 
@@ -2582,6 +2698,7 @@ function renderSummary() {
   const profile = state.activeProfile;
   elements.selectedName.textContent = profile.displayNameZh;
   elements.selectedScene.textContent = profile.scene;
+  renderNetworkWaveControl();
 
   const metrics = [
     ["应用模式", getNetworkModeLabel()],
@@ -2654,7 +2771,7 @@ function inferDisconnectMode(profile) {
 }
 
 function renderCommandPreview() {
-  const profile = state.activeProfile;
+  const profile = getProfileForApply();
   const deviceIp = elements.deviceIp.value.trim() || "192.168.2.12";
   const targetPackage = elements.targetApp.value.trim() || "com.example.game";
   const serial = state.agent.selectedSerial || "<device_serial>";
@@ -2691,14 +2808,16 @@ function renderCommandPreview() {
     }
 
     if (support.mode === "socks") {
-      elements.commandPreview.textContent = [
+      const lines = [
         `# ${profile.displayNameZh}：Android VPN Agent + Mac SOCKS 弱网`,
         `# serial=${serial}`,
         `# target_package=${targetPackage}`,
         "# Mac 控制台会启动 SOCKS5 出口 0.0.0.0:8124，仅允许当前 Android IP 连接",
         "# Mac 控制台会用 pf/dnctl 对 Android<->Mac SOCKS 隧道施加延迟/丢包/带宽/断续",
         `adb -s ${serial} shell am broadcast -n com.weaknet.agent/.CommandReceiver -a com.weaknet.agent.APPLY --es profileBase64 '<profile-json-with-socks-endpoint>' --es targetPackage ${targetPackage}`,
-      ].join("\n");
+      ];
+      pushNetworkWaveCommandNotes(lines, profile);
+      elements.commandPreview.textContent = lines.join("\n");
       return;
     }
 
@@ -2777,6 +2896,7 @@ function renderCommandPreview() {
     if (profile.jitterMs > 0) {
       lines.push("", `# 抖动=${formatMs(profile.jitterMs)}：Agent 会每 2s 动态重配 pipe`);
     }
+    pushNetworkWaveCommandNotes(lines, profile);
     if (profile.disconnectMode === "periodic") {
       lines.push("", `# 断续网络：每 ${profile.disconnectIntervalSec}s 阻断 ${profile.disconnectDurationSec}s`);
     }
@@ -2852,6 +2972,7 @@ function renderCommandPreview() {
     if (profile.jitterMs > 0) {
       lines.push("", `# 抖动=${formatMs(profile.jitterMs)}：Agent 会每 2s 动态重配 pipe`);
     }
+    pushNetworkWaveCommandNotes(lines, profile);
     if (profile.disconnectMode === "periodic") {
       lines.push("", `# 断续网络：每 ${profile.disconnectIntervalSec}s 阻断 ${profile.disconnectDurationSec}s`);
     }
@@ -2924,6 +3045,7 @@ function renderCommandPreview() {
       "# Agent 会每 2s 在延迟范围内动态重配 pipe",
     );
   }
+  pushNetworkWaveCommandNotes(lines, profile);
 
   if (profile.disconnectMode === "periodic") {
     lines.push(
@@ -3007,6 +3129,7 @@ function getOperationLogDetail(item) {
   const mode = item.networkMode || "macOS 网关";
   const target = getRecordTarget(item);
   if (item.presetKey === "normal") return `${mode} · 已恢复`;
+  if (isNetworkWaveProfile(item)) return `${mode} · ${NETWORK_WAVE_MODE.scene}`;
   return `${mode} · ${target}`;
 }
 
@@ -3117,7 +3240,7 @@ async function applyAndroidVpnProfile(record, profile) {
 
 async function applyProfile() {
   syncProfileFromEditor();
-  const profile = state.activeProfile;
+  const profile = getProfileForApply();
   state.networkMode = getNetworkMode();
   if (!requireLocalAgent()) {
     renderSummary();
@@ -3647,6 +3770,14 @@ function bindEvents() {
     elements.advancedEditor.classList.toggle("visible", elements.advancedToggle.checked);
     syncEditorFromProfile();
   });
+
+  if (elements.networkWaveToggle) {
+    elements.networkWaveToggle.addEventListener("change", () => {
+      renderNetworkWaveControl();
+      renderSummary();
+      renderCommandPreview();
+    });
+  }
 
   editorFields.forEach((field) => {
     document.getElementById(field).addEventListener("input", () => {
