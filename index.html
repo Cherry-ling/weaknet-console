@@ -24,6 +24,7 @@
       </header>
 
       <main class="workspace">
+        <div class="workspace-left">
         <section class="panel device-panel" aria-labelledby="device-title">
           <div class="section-heading">
             <div>
@@ -98,6 +99,7 @@
               <span id="targetAppLabel">目标游戏</span>
               <input id="targetApp" type="text" value="com.example.game" />
             </label>
+            <section class="device-mode-summary" id="deviceModeSummary" aria-label="本机模式摘要" hidden></section>
             <div class="device-actions" id="deviceActions">
               <button class="primary-button compact-button" id="refreshDevicesButton" type="button">刷新设备</button>
               <button class="secondary-button compact-button" id="foregroundButton" type="button">读取前台应用</button>
@@ -125,6 +127,33 @@
           </div>
         </section>
 
+        <section class="panel preset-panel" aria-labelledby="preset-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Preset</p>
+              <h2 id="preset-title">弱网预设</h2>
+            </div>
+            <div class="segmented-control" role="tablist" aria-label="预设分类">
+              <button class="segment active" data-category="common" type="button">常用</button>
+              <button class="segment" data-category="extreme" type="button">极端</button>
+            </div>
+          </div>
+          <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
+        </section>
+
+        <section class="panel history-panel" aria-labelledby="history-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Report</p>
+              <h2 id="history-title">历史记录</h2>
+            </div>
+            <button class="ghost-button" id="clearHistoryButton" type="button">清空</button>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+        </div>
+
+        <div class="workspace-main">
         <section class="panel monitor-panel" aria-labelledby="monitor-title">
           <div class="section-heading">
             <div>
@@ -180,20 +209,7 @@
           </div>
         </section>
 
-        <section class="panel preset-panel" aria-labelledby="preset-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Preset</p>
-              <h2 id="preset-title">弱网预设</h2>
-            </div>
-            <div class="segmented-control" role="tablist" aria-label="预设分类">
-              <button class="segment active" data-category="common" type="button">常用</button>
-              <button class="segment" data-category="extreme" type="button">极端</button>
-            </div>
-          </div>
-          <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
-        </section>
-
+        <div class="workspace-work-row">
         <section class="panel editor-panel" aria-labelledby="editor-title">
           <div class="section-heading">
             <div>
@@ -269,20 +285,12 @@
               </div>
             </div>
             <div class="operation-steps" id="operationSteps"></div>
+            <div class="operation-log" id="operationLog" aria-label="最近操作"></div>
           </section>
           <pre id="commandPreview" hidden></pre>
         </section>
-
-        <section class="panel history-panel" aria-labelledby="history-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Report</p>
-              <h2 id="history-title">历史记录</h2>
-            </div>
-            <button class="ghost-button" id="clearHistoryButton" type="button">清空</button>
-          </div>
-          <div class="history-list" id="historyList"></div>
-        </section>
+        </div>
+        </div>
       </main>
     </div>
 

@@ -241,6 +241,7 @@ const elements = {
   deviceSerial: document.getElementById("deviceSerial"),
   deviceStatus: document.getElementById("deviceStatus"),
   deviceNote: document.getElementById("deviceNote"),
+  deviceModeSummary: document.getElementById("deviceModeSummary"),
   currentEffectStrip: document.getElementById("currentEffectStrip"),
   currentEffectLabel: document.getElementById("currentEffectLabel"),
   currentEffectTitle: document.getElementById("currentEffectTitle"),
@@ -297,6 +298,7 @@ const elements = {
   operationTitle: document.getElementById("operationTitle"),
   operationMessage: document.getElementById("operationMessage"),
   operationSteps: document.getElementById("operationSteps"),
+  operationLog: document.getElementById("operationLog"),
   launcherGate: document.getElementById("launcherGate"),
   launcherMessage: document.getElementById("launcherMessage"),
   launcherStatusText: document.getElementById("launcherStatusText"),
@@ -893,6 +895,7 @@ function renderCurrentEffect() {
     }
     elements.currentEffectChips.innerHTML = chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("");
   }
+  renderDeviceModeSummary();
 }
 
 function setOperationStatus(update = {}) {
@@ -1200,6 +1203,7 @@ function updateDeviceModeLayout() {
   setHidden(elements.deviceIpField, !macGateway);
   setHidden(elements.platformField, !macGateway);
   setHidden(elements.targetAppField, !androidVpn);
+  setHidden(elements.deviceModeSummary, !macLocal);
 
   setHidden(elements.refreshDevicesButton, !(androidVpn || macGateway));
   setHidden(elements.foregroundButton, !androidVpn);
@@ -1250,6 +1254,7 @@ function updateNetworkModeUi() {
     elements.foregroundButton.disabled = false;
     renderDeviceModeNote();
   }
+  renderDeviceModeSummary();
   renderGatewayScope();
 }
 
@@ -1264,6 +1269,49 @@ function renderDeviceModeNote() {
   } else if (getNetworkMode() === "macos") {
     elements.deviceNote.textContent = "macOS 网关模式按设备 IP 控制经过 Mac 的测试机流量。";
   }
+}
+
+function getModeRuleState(modeLabel) {
+  const effect = state.currentEffect;
+  if (state.serviceStopped || effect.title === "服务不可用") return "服务不可用";
+  if (!effect.profile) return "未施加弱网";
+  if (effect.modeLabel === modeLabel) return effect.title;
+  return "其他模式生效";
+}
+
+function renderDeviceModeSummary() {
+  if (!elements.deviceModeSummary) return;
+  if (!isMacLocalMode()) {
+    elements.deviceModeSummary.innerHTML = "";
+    setHidden(elements.deviceModeSummary, true);
+    return;
+  }
+
+  setHidden(elements.deviceModeSummary, false);
+  const modeLabel = getNetworkModeLabel();
+  const rows = isMacGlobalMode()
+    ? [
+        ["影响范围", "整台 Mac 外网流量"],
+        ["排除范围", "localhost / 127.0.0.1"],
+        ["当前规则", getModeRuleState(modeLabel)],
+      ]
+    : [
+        ["覆盖范围", "Unity 业务 / CDN / SDK"],
+        ["目标来源", state.agent.macUnityTargets.length ? "内置目标" : getMacUnityTargetEndpoint() ? "手动输入" : "等待配置"],
+        ["受限目标", state.agent.macUnityTargets.length ? `${state.agent.macUnityTargets.length} 个目标` : getMacUnityTargetEndpoint() ? "已填写" : "未配置"],
+        ["当前规则", getModeRuleState(modeLabel)],
+      ];
+
+  elements.deviceModeSummary.innerHTML = rows
+    .map(
+      ([label, value]) => `
+        <div class="device-summary-row">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+    )
+    .join("");
 }
 
 function getMacUnityTargetEndpoint() {
@@ -1299,6 +1347,7 @@ async function loadMacUnityBuiltinTargets(fillInput = false) {
     } else if (fillInput) {
       elements.deviceNote.textContent = "Mac Unity 内置目标尚未配置；请在 mac-unity-targets.json 填写三个 host:port。";
     }
+    renderDeviceModeSummary();
     renderGatewayScope();
     renderCommandPreview();
     return targets;
@@ -1306,6 +1355,7 @@ async function loadMacUnityBuiltinTargets(fillInput = false) {
     if (fillInput) {
       elements.deviceNote.textContent = `读取 Mac Unity 内置目标失败：${error.message}`;
     }
+    renderDeviceModeSummary();
     renderGatewayScope();
     return [];
   }
@@ -2231,7 +2281,17 @@ function drawNetworkCurveChart() {
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#10181c";
+  const chartTheme = {
+    background: "#11171d",
+    grid: "rgba(226, 236, 242, 0.08)",
+    axisText: "rgba(148, 159, 178, 0.78)",
+    emptyText: "rgba(220, 232, 238, 0.58)",
+    downLine: "rgba(103, 106, 255, 1)",
+    upLine: "rgba(36, 199, 108, 1)",
+    downArea: "rgba(112, 121, 137, 0.58)",
+    upArea: "rgba(28, 126, 95, 0.16)",
+  };
+  ctx.fillStyle = chartTheme.background;
   ctx.fillRect(0, 0, width, height);
 
   const samples = state.networkCurve.samples;
@@ -2244,10 +2304,10 @@ function drawNetworkCurveChart() {
   });
   yMax = Math.max(yMax * 1.15, 10);
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.strokeStyle = chartTheme.grid;
   ctx.lineWidth = 1;
   ctx.font = "11px Inter, sans-serif";
-  ctx.fillStyle = "#6b7280";
+  ctx.fillStyle = chartTheme.axisText;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (let index = 0; index <= 4; index += 1) {
@@ -2260,7 +2320,7 @@ function drawNetworkCurveChart() {
   }
 
   if (samples.length < 2) {
-    ctx.fillStyle = "rgba(220, 236, 240, 0.58)";
+    ctx.fillStyle = chartTheme.emptyText;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "13px Inter, sans-serif";
@@ -2305,43 +2365,62 @@ function drawNetworkCurveChart() {
     right: lastLabelX,
     x: lastLabelX,
   });
-  ctx.fillStyle = "#6b7280";
+  ctx.fillStyle = chartTheme.axisText;
   timeLabels.forEach((label) => {
     ctx.textAlign = label.align;
     ctx.fillText(label.label, label.x, labelY);
   });
 
-  const drawCurveLine = (key, color) => {
+  const getPoint = (sample, index, key) => ({
+    x: pad.left + (index / (samples.length - 1)) * chartWidth,
+    y: pad.top + chartHeight - (sample[key] / yMax) * chartHeight,
+  });
+
+  const drawSeriesArea = (key, fill) => {
+    ctx.beginPath();
+    samples.forEach((sample, index) => {
+      const { x, y } = getPoint(sample, index, key);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(pad.left + chartWidth, pad.top + chartHeight);
+    ctx.lineTo(pad.left, pad.top + chartHeight);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  };
+
+  const drawSeriesLine = (key, color) => {
     ctx.beginPath();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
+    ctx.lineWidth = 1.45;
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "butt";
+    ctx.miterLimit = 2;
     samples.forEach((sample, index) => {
-      const x = pad.left + (index / (samples.length - 1)) * chartWidth;
-      const y = pad.top + chartHeight - (sample[key] / yMax) * chartHeight;
+      const { x, y } = getPoint(sample, index, key);
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
+  };
 
-    ctx.lineTo(pad.left + chartWidth, pad.top + chartHeight);
-    ctx.lineTo(pad.left, pad.top + chartHeight);
-    ctx.closePath();
-    ctx.fillStyle = color.replace("1)", "0.06)");
-    ctx.fill();
-
+  const drawSeriesDot = (key, color) => {
     const last = samples[samples.length - 1];
     const dotX = pad.left + chartWidth;
     const dotY = pad.top + chartHeight - (last[key] / yMax) * chartHeight;
     ctx.beginPath();
-    ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+    ctx.arc(dotX, dotY, 3.1, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
   };
 
-  drawCurveLine("upKbps", "rgba(34,197,94,1)");
-  drawCurveLine("downKbps", "rgba(99,102,241,1)");
+  drawSeriesArea("upKbps", chartTheme.upArea);
+  drawSeriesArea("downKbps", chartTheme.downArea);
+  drawSeriesLine("upKbps", chartTheme.upLine);
+  drawSeriesLine("downKbps", chartTheme.downLine);
+  drawSeriesDot("upKbps", chartTheme.upLine);
+  drawSeriesDot("downKbps", chartTheme.downLine);
 }
 
 function startNetworkCurve() {
@@ -2860,6 +2939,7 @@ function renderCommandPreview() {
 function renderHistory() {
   if (!state.history.length) {
     elements.historyList.innerHTML = '<p class="history-empty">暂无历史记录</p>';
+    renderOperationLog();
     return;
   }
 
@@ -2913,6 +2993,48 @@ function renderHistory() {
       `,
     )
     .join("");
+  renderOperationLog();
+}
+
+function getOperationLogTime(createdAt) {
+  const value = String(createdAt || "").trim();
+  if (!value) return "--:--";
+  return value.split(/\s+/).pop();
+}
+
+function getOperationLogDetail(item) {
+  if (!item) return "";
+  const mode = item.networkMode || "macOS 网关";
+  const target = getRecordTarget(item);
+  if (item.presetKey === "normal") return `${mode} · 已恢复`;
+  return `${mode} · ${target}`;
+}
+
+function renderOperationLog() {
+  if (!elements.operationLog) return;
+  const items = state.history.slice(0, 3);
+  if (!items.length) {
+    elements.operationLog.innerHTML = `
+      <div class="operation-log-title">最近操作</div>
+      <p class="operation-empty">暂无最近操作。</p>
+    `;
+    return;
+  }
+
+  elements.operationLog.innerHTML = `
+    <div class="operation-log-title">最近操作</div>
+    ${items
+      .map(
+        (item) => `
+          <div class="operation-log-row">
+            <time>${escapeHtml(getOperationLogTime(item.createdAt))}</time>
+            <strong>${escapeHtml(item.displayNameZh || "弱网操作")}</strong>
+            <span>${escapeHtml(getOperationLogDetail(item))}</span>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
 }
 
 function renderAll() {
@@ -3537,11 +3659,17 @@ function bindEvents() {
   [elements.deviceIp, elements.platform, elements.targetApp, elements.networkMode].forEach((input) => {
     input.addEventListener("input", () => {
       renderCommandPreview();
-      if (input === elements.targetApp) renderGatewayScope();
+      if (input === elements.targetApp) {
+        renderDeviceModeSummary();
+        renderGatewayScope();
+      }
     });
     input.addEventListener("change", () => {
       renderCommandPreview();
-      if (input === elements.targetApp) renderGatewayScope();
+      if (input === elements.targetApp) {
+        renderDeviceModeSummary();
+        renderGatewayScope();
+      }
     });
   });
 
