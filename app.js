@@ -152,6 +152,14 @@ const launcherConfig = {
   agentPort: "8123",
 };
 
+const THEME_STORAGE_KEY = "weaknet-theme";
+const THEMES = [
+  { key: "terminal-aurora", label: "冷色终端", toastLabel: "冷色终端" },
+  { key: "cyber", label: "矩阵终端", toastLabel: "矩阵终端" },
+  { key: "classic", label: "经典浅色", toastLabel: "经典浅色" },
+];
+const DEFAULT_THEME = "terminal-aurora";
+const THEME_KEYS = new Set(THEMES.map((theme) => theme.key));
 const SERVICE_STOPPED_MESSAGE = "弱网服务已停止，请点击重启服务，或重新打开弱网控制台.app重新启动服务。";
 const SERVICE_UNAVAILABLE_EFFECT_MESSAGE = "Agent 已停止，无法采集或施加弱网。";
 const NETWORK_WAVE_MODE = {
@@ -168,6 +176,7 @@ const state = {
   selectedKey: "normal",
   networkMode: "mac-global",
   monitorTab: "network",
+  theme: loadTheme(),
   activeProfile: cloneProfile(presets[0]),
   history: loadHistory(),
   agent: {
@@ -294,6 +303,9 @@ const elements = {
   resetButton: document.getElementById("resetButton"),
   stopServiceButton: document.getElementById("stopServiceButton"),
   clearHistoryButton: document.getElementById("clearHistoryButton"),
+  themePrevButton: document.getElementById("themePrevButton"),
+  themeLockButton: document.getElementById("themeLockButton"),
+  themeNextButton: document.getElementById("themeNextButton"),
   deviceIp: document.getElementById("deviceIp"),
   platform: document.getElementById("platform"),
   networkMode: document.getElementById("networkMode"),
@@ -345,6 +357,65 @@ function loadHistory() {
 
 function saveHistory() {
   localStorage.setItem("weaknet-history", JSON.stringify(state.history.slice(0, 20)));
+}
+
+function loadTheme() {
+  try {
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    return THEME_KEYS.has(savedTheme) ? savedTheme : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
+function saveTheme(theme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Theme persistence is a convenience; the console should still run without storage.
+  }
+}
+
+function getThemeMeta(theme) {
+  return THEMES.find((item) => item.key === theme) || THEMES[0];
+}
+
+function getThemeIndex(theme) {
+  const index = THEMES.findIndex((item) => item.key === theme);
+  return index >= 0 ? index : 0;
+}
+
+function setTheme(theme, options = {}) {
+  const nextTheme = THEME_KEYS.has(theme) ? theme : DEFAULT_THEME;
+  const themeMeta = getThemeMeta(nextTheme);
+  state.theme = nextTheme;
+  document.body.classList.toggle("theme-cyber", nextTheme === "cyber" || nextTheme === "terminal-aurora");
+  document.body.classList.toggle("theme-terminal-aurora", nextTheme === "terminal-aurora");
+  document.body.classList.toggle("theme-classic", nextTheme === "classic");
+
+  if (elements.themeLockButton) {
+    elements.themeLockButton.textContent = themeMeta.label;
+    elements.themeLockButton.dataset.theme = nextTheme;
+    elements.themeLockButton.setAttribute("aria-label", `锁定当前样式为默认：${themeMeta.label}`);
+    elements.themeLockButton.title = `锁定当前样式为默认：${themeMeta.label}`;
+  }
+
+  if (options.persist) saveTheme(nextTheme);
+  drawNetworkCurveChart();
+  drawPerformanceChart();
+  if (options.toast) {
+    const prefix = options.persist ? "已锁定默认样式" : "预览样式";
+    showToast(`${prefix}：${themeMeta.toastLabel}`, "info", { duration: 2400 });
+  }
+}
+
+function cycleTheme(direction) {
+  const nextIndex = (getThemeIndex(state.theme) + direction + THEMES.length) % THEMES.length;
+  setTheme(THEMES[nextIndex].key, { toast: true });
+}
+
+function lockCurrentTheme() {
+  setTheme(state.theme, { persist: true, toast: true });
 }
 
 function isLikelyLocalAgent() {
@@ -841,6 +912,19 @@ function renderNetworkWaveControl() {
   if (elements.networkWaveState) {
     elements.networkWaveState.textContent = state.networkWave.enabled ? "已开启" : "已关闭";
   }
+}
+
+function setNetworkWaveEnabled(enabled) {
+  if (elements.networkWaveToggle) {
+    elements.networkWaveToggle.checked = Boolean(enabled);
+  }
+  renderNetworkWaveControl();
+}
+
+function disableNetworkWaveAfterClear() {
+  setNetworkWaveEnabled(false);
+  renderSummary();
+  renderCommandPreview();
 }
 
 function getProfileForApply() {
@@ -3560,6 +3644,7 @@ async function clearWeakNet() {
         message: "手机端弱网规则已清理。",
         steps: data.steps,
       });
+      disableNetworkWaveAfterClear();
       renderGatewayScope();
       showToast("已恢复正常网络 · Android VPN 已停止", "success");
       await refreshAndroidVpnStatus(false);
@@ -3612,6 +3697,7 @@ async function clearWeakNet() {
       message: "弱网规则已清理。",
       steps: data.steps,
     });
+    disableNetworkWaveAfterClear();
     renderGatewayScope();
     showToast("已恢复正常网络", "success");
   } catch (error) {
@@ -3766,6 +3852,10 @@ function bindEvents() {
     button.addEventListener("click", () => setCategory(button.dataset.category));
   });
 
+  elements.themePrevButton?.addEventListener("click", () => cycleTheme(-1));
+  elements.themeNextButton?.addEventListener("click", () => cycleTheme(1));
+  elements.themeLockButton?.addEventListener("click", lockCurrentTheme);
+
   elements.advancedToggle.addEventListener("change", () => {
     elements.advancedEditor.classList.toggle("visible", elements.advancedToggle.checked);
     syncEditorFromProfile();
@@ -3919,6 +4009,7 @@ function bindEvents() {
 }
 
 async function initApp() {
+  setTheme(state.theme);
   bindEvents();
   setMonitorTab("network");
   updateNetworkModeUi();
