@@ -56,6 +56,20 @@ const presets = [
     disconnectIntervalSec: 0,
   },
   {
+    presetKey: "edge",
+    displayNameZh: "EDGE 网络",
+    category: "common",
+    scene: "极慢移动网络",
+    latencyRttMs: 400,
+    jitterMs: 120,
+    packetLossPercent: 2,
+    downloadKbps: 240,
+    uploadKbps: 120,
+    disconnectMode: "none",
+    disconnectDurationSec: 0,
+    disconnectIntervalSec: 0,
+  },
+  {
     presetKey: "dsl",
     displayNameZh: "DSL 宽带",
     category: "extreme",
@@ -65,20 +79,6 @@ const presets = [
     packetLossPercent: 0.2,
     downloadKbps: 2000,
     uploadKbps: 256,
-    disconnectMode: "none",
-    disconnectDurationSec: 0,
-    disconnectIntervalSec: 0,
-  },
-  {
-    presetKey: "edge",
-    displayNameZh: "EDGE 网络",
-    category: "extreme",
-    scene: "极慢移动网络",
-    latencyRttMs: 400,
-    jitterMs: 120,
-    packetLossPercent: 2,
-    downloadKbps: 240,
-    uploadKbps: 120,
     disconnectMode: "none",
     disconnectDurationSec: 0,
     disconnectIntervalSec: 0,
@@ -153,6 +153,7 @@ const launcherConfig = {
 };
 
 const SERVICE_STOPPED_MESSAGE = "弱网服务已停止，请点击重启服务，或重新打开弱网控制台.app重新启动服务。";
+const SERVICE_UNAVAILABLE_EFFECT_MESSAGE = "Agent 已停止，无法采集或施加弱网。";
 
 const state = {
   category: "common",
@@ -200,7 +201,6 @@ const state = {
     title: "等待操作",
     message: "应用预设或清除弱网后展示结果。",
     steps: [],
-    expanded: false,
   },
   gateway: {
     expanded: false,
@@ -241,10 +241,6 @@ const elements = {
   deviceSerial: document.getElementById("deviceSerial"),
   deviceStatus: document.getElementById("deviceStatus"),
   deviceNote: document.getElementById("deviceNote"),
-  deviceEffectCard: document.getElementById("deviceEffectCard"),
-  deviceEffectKicker: document.getElementById("deviceEffectKicker"),
-  deviceEffectTitle: document.getElementById("deviceEffectTitle"),
-  deviceEffectMeta: document.getElementById("deviceEffectMeta"),
   currentEffectStrip: document.getElementById("currentEffectStrip"),
   currentEffectLabel: document.getElementById("currentEffectLabel"),
   currentEffectTitle: document.getElementById("currentEffectTitle"),
@@ -282,7 +278,6 @@ const elements = {
   clearButton: document.getElementById("clearButton"),
   resetButton: document.getElementById("resetButton"),
   stopServiceButton: document.getElementById("stopServiceButton"),
-  copyButton: document.getElementById("copyButton"),
   clearHistoryButton: document.getElementById("clearHistoryButton"),
   deviceIp: document.getElementById("deviceIp"),
   platform: document.getElementById("platform"),
@@ -386,18 +381,11 @@ function showServiceStoppedNotice() {
   state.agent.metricsSource = "none";
   elements.runtimeMode.textContent = "服务已停止";
   elements.deviceNote.textContent = SERVICE_STOPPED_MESSAGE;
-  setCurrentEffect({
-    tone: "warn",
-    title: "服务已停止",
-    meta: SERVICE_STOPPED_MESSAGE,
-    profile: null,
-    modeLabel: getNetworkModeLabel(),
-    target: "本机服务",
-  });
+  setServiceUnavailableEffect();
   updateOperationFromSteps({
     tone: "warn",
-    title: "服务已停止",
-    message: SERVICE_STOPPED_MESSAGE,
+    title: "服务连接中断",
+    message: "请重启服务后再操作。",
     steps: [],
   });
   renderServiceActionButton();
@@ -821,11 +809,41 @@ function getRecordTarget(record = {}) {
 }
 
 function setCurrentEffect(effect = {}) {
-  state.currentEffect = {
+  const nextEffect = {
     ...state.currentEffect,
     ...effect,
   };
+  if (!Object.prototype.hasOwnProperty.call(effect, "chips")) delete nextEffect.chips;
+  state.currentEffect = nextEffect;
   renderCurrentEffect();
+}
+
+function setServiceUnavailableEffect() {
+  setCurrentEffect({
+    tone: "warn",
+    title: "服务不可用",
+    meta: SERVICE_UNAVAILABLE_EFFECT_MESSAGE,
+    profile: null,
+    modeLabel: getNetworkModeLabel(),
+    target: "本机服务",
+    chips: ["未采集"],
+  });
+}
+
+function getApplyOperationStartTitle(profile) {
+  return profile && profile.presetKey === "normal" ? "正在恢复正常网络" : "正在应用预设";
+}
+
+function getApplyOperationStartMessage(profile) {
+  return profile && profile.presetKey === "normal" ? "正在清理弱网规则。" : "正在检查权限并写入弱网规则。";
+}
+
+function getApplyOperationDoneTitle(profile) {
+  return profile && profile.presetKey === "normal" ? "清除完成" : "应用完成";
+}
+
+function getApplyOperationDoneMessage(profile) {
+  return profile && profile.presetKey === "normal" ? "规则已清理，当前效果已更新。" : "规则已写入，当前效果已更新。";
 }
 
 function setCurrentEffectFromRecord(record, profile, tone = "ok") {
@@ -853,32 +871,26 @@ function setCurrentEffectFromRecord(record, profile, tone = "ok") {
 function renderCurrentEffect() {
   const effect = state.currentEffect;
   const toneClasses = ["status-ok", "status-warn", "status-error", "status-info"];
-  if (elements.deviceEffectCard) {
-    elements.deviceEffectCard.classList.remove(...toneClasses);
-    elements.deviceEffectCard.classList.add(`status-${effect.tone || "info"}`);
-  }
   if (elements.currentEffectStrip) {
     elements.currentEffectStrip.classList.remove(...toneClasses);
     elements.currentEffectStrip.classList.add(`status-${effect.tone || "info"}`);
   }
-  if (elements.deviceEffectKicker) {
-    elements.deviceEffectKicker.textContent = effect.tone === "error" ? "最近状态" : "当前状态";
-  }
-  if (elements.deviceEffectTitle) elements.deviceEffectTitle.textContent = effect.title;
-  if (elements.deviceEffectMeta) elements.deviceEffectMeta.textContent = effect.meta;
-  if (elements.currentEffectLabel) elements.currentEffectLabel.textContent = effect.tone === "error" ? "最近结果" : "当前效果";
+  if (elements.currentEffectLabel) elements.currentEffectLabel.textContent = "当前效果";
   if (elements.currentEffectTitle) elements.currentEffectTitle.textContent = effect.title;
   if (elements.currentEffectMeta) elements.currentEffectMeta.textContent = effect.meta;
   if (elements.currentEffectChips) {
     const profile = effect.profile;
-    const chips = profile
-      ? [
-          `RTT ${formatMs(profile.latencyRttMs)}`,
-          `丢包 ${formatLoss(profile.packetLossPercent)}`,
-          `下行 ${formatBandwidth(profile.downloadKbps)}`,
-          `上行 ${formatBandwidth(profile.uploadKbps)}`,
-        ]
-      : ["未施加弱网"];
+    let chips = Array.isArray(effect.chips) && effect.chips.length ? effect.chips : null;
+    if (!chips) {
+      chips = profile
+        ? [
+            `RTT ${formatMs(profile.latencyRttMs)}`,
+            `丢包 ${formatLoss(profile.packetLossPercent)}`,
+            `下行 ${formatBandwidth(profile.downloadKbps)}`,
+            `上行 ${formatBandwidth(profile.uploadKbps)}`,
+          ]
+        : ["未施加弱网"];
+    }
     elements.currentEffectChips.innerHTML = chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("");
   }
 }
@@ -904,7 +916,7 @@ function renderOperationStatus() {
   if (elements.operationMessage) elements.operationMessage.textContent = operation.message;
   const steps = operation.steps || [];
   if (elements.operationSteps) {
-    elements.operationSteps.hidden = !operation.expanded;
+    elements.operationSteps.hidden = false;
     if (steps.length) {
       elements.operationSteps.innerHTML = steps
         .map(
@@ -920,11 +932,6 @@ function renderOperationStatus() {
       elements.operationSteps.innerHTML = '<p class="operation-empty">暂无技术步骤。</p>';
     }
   }
-  if (elements.copyButton) {
-    elements.copyButton.textContent = operation.expanded ? "收起" : "展开";
-    elements.copyButton.disabled = !steps.length;
-    elements.copyButton.setAttribute("aria-expanded", operation.expanded ? "true" : "false");
-  }
 }
 
 function updateOperationFromSteps({ tone, title, message, steps }) {
@@ -933,7 +940,6 @@ function updateOperationFromSteps({ tone, title, message, steps }) {
     title: summarizeOperation(title, steps),
     message,
     steps: steps || [],
-    expanded: false,
   });
 }
 
@@ -1219,7 +1225,7 @@ function updateNetworkModeUi() {
     elements.installVpnButton.disabled = true;
     elements.authorizeVpnButton.disabled = true;
     elements.foregroundButton.disabled = true;
-    elements.deviceNote.textContent = "Mac 全局弱网会影响整台 Mac 的非 localhost 网络，效果最接近真实断网/弱网。";
+    renderDeviceModeNote();
   } else if (isMacUnityMode()) {
     if (elements.targetApp.value.trim() === "com.example.game" || elements.targetApp.value.startsWith("整台 Mac 外网")) {
       elements.targetApp.value = "";
@@ -1229,7 +1235,7 @@ function updateNetworkModeUi() {
     elements.installVpnButton.disabled = true;
     elements.authorizeVpnButton.disabled = true;
     elements.foregroundButton.disabled = true;
-    elements.deviceNote.textContent = "Mac Unity 真实断网仿真会限制 Unity 业务/CDN/SDK 相关目标；完整目标见受限网关。";
+    renderDeviceModeNote();
   } else {
     const targetValue = elements.targetApp.value.trim();
     if (isAndroidVpnMode() && (targetValue.startsWith("整台 Mac 外网") || targetValue.includes(":") || targetValue.includes(","))) {
@@ -1242,13 +1248,22 @@ function updateNetworkModeUi() {
     elements.installVpnButton.disabled = false;
     elements.authorizeVpnButton.disabled = false;
     elements.foregroundButton.disabled = false;
-    if (isAndroidVpnMode()) {
-      elements.deviceNote.textContent = "Android VPN Agent 模式会在手机端按目标包名接管流量；先选择设备和包名，再应用预设。";
-    } else if (getNetworkMode() === "macos") {
-      elements.deviceNote.textContent = "macOS 网关模式按设备 IP 控制经过 Mac 的测试机流量。";
-    }
+    renderDeviceModeNote();
   }
   renderGatewayScope();
+}
+
+function renderDeviceModeNote() {
+  if (!elements.deviceNote) return;
+  if (isMacGlobalMode()) {
+    elements.deviceNote.textContent = "Mac 全局弱网会影响整台 Mac 的非 localhost 网络，效果最接近真实断网/弱网。";
+  } else if (isMacUnityMode()) {
+    elements.deviceNote.textContent = "Mac Unity 真实断网仿真会限制 Unity 业务/CDN/SDK 相关目标；完整目标见受限网关。";
+  } else if (isAndroidVpnMode()) {
+    elements.deviceNote.textContent = "Android VPN Agent 模式会在手机端按目标包名接管流量；先选择设备和包名，再应用预设。";
+  } else if (getNetworkMode() === "macos") {
+    elements.deviceNote.textContent = "macOS 网关模式按设备 IP 控制经过 Mac 的测试机流量。";
+  }
 }
 
 function getMacUnityTargetEndpoint() {
@@ -2253,14 +2268,47 @@ function drawNetworkCurveChart() {
     return;
   }
 
-  ctx.textAlign = "center";
   ctx.textBaseline = "top";
   const labelStep = Math.max(1, Math.floor(samples.length / 6));
+  const labelGap = 12;
+  const labelY = height - pad.bottom + 8;
+  const lastIndex = samples.length - 1;
+  const lastLabel = samples[lastIndex].label;
+  const lastLabelWidth = ctx.measureText(lastLabel).width;
+  const lastLabelX = width - pad.right;
+  const lastLabelLeft = lastLabelX - lastLabelWidth;
+  const timeLabels = [];
+
+  const getSampleX = (index) => pad.left + (index / lastIndex) * chartWidth;
   samples.forEach((sample, index) => {
-    if (index % labelStep !== 0 && index !== samples.length - 1) return;
-    const x = pad.left + (index / (samples.length - 1)) * chartWidth;
-    ctx.fillStyle = "#6b7280";
-    ctx.fillText(sample.label, x, height - pad.bottom + 8);
+    if (index === lastIndex || index % labelStep !== 0) return;
+    const labelWidth = ctx.measureText(sample.label).width;
+    const rawX = getSampleX(index);
+    const x = Math.max(pad.left + labelWidth / 2, Math.min(width - pad.right - labelWidth / 2, rawX));
+    const left = x - labelWidth / 2;
+    const right = x + labelWidth / 2;
+    const previous = timeLabels[timeLabels.length - 1];
+    if (previous && left < previous.right + labelGap) return;
+    if (right > lastLabelLeft - labelGap) return;
+    timeLabels.push({
+      align: "center",
+      label: sample.label,
+      left,
+      right,
+      x,
+    });
+  });
+  timeLabels.push({
+    align: "right",
+    label: lastLabel,
+    left: lastLabelLeft,
+    right: lastLabelX,
+    x: lastLabelX,
+  });
+  ctx.fillStyle = "#6b7280";
+  timeLabels.forEach((label) => {
+    ctx.textAlign = label.align;
+    ctx.fillText(label.label, label.x, labelY);
   });
 
   const drawCurveLine = (key, color) => {
@@ -2912,13 +2960,11 @@ function pushHistory(record) {
 async function applyAndroidVpnProfile(record, profile) {
   elements.runtimeMode.textContent = "Android VPN 下发中";
   elements.deviceNote.textContent = `正在通过 Android VPN Agent 下发 ${record.displayNameZh}...`;
-  const startTitle = profile.presetKey === "normal" ? "正在恢复正常网络" : `正在应用：${record.displayNameZh}`;
   setOperationStatus({
     tone: "info",
-    title: startTitle,
-    message: `${record.networkMode} · ${getRecordTarget(record)}`,
+    title: getApplyOperationStartTitle(profile),
+    message: getApplyOperationStartMessage(profile),
     steps: [],
-    expanded: false,
   });
 
   const data = await postAgentJson("/api/android-vpn/apply", {
@@ -2937,8 +2983,8 @@ async function applyAndroidVpnProfile(record, profile) {
   setCurrentEffectFromRecord(record, profile, "ok");
   updateOperationFromSteps({
     tone: "ok",
-    title: isNormal ? "清除完成" : "应用完成",
-    message: isNormal ? "Android VPN 已停止，正常网络已恢复。" : `${record.displayNameZh} 已对 ${getRecordTarget(record)} 生效。`,
+    title: getApplyOperationDoneTitle(profile),
+    message: getApplyOperationDoneMessage(profile),
     steps: data.steps,
   });
   showToast(isNormal ? "已恢复正常网络 · Android VPN 已停止" : `已生效：${record.displayNameZh}`, "success", {
@@ -3020,14 +3066,6 @@ async function applyProfile() {
       } else {
         elements.runtimeMode.textContent = "下发失败";
         elements.deviceNote.textContent = `Android VPN 下发失败：${readable}`;
-        setCurrentEffect({
-          tone: "error",
-          title: "未生效",
-          meta: readable,
-          profile: null,
-          modeLabel: record.networkMode,
-          target: getRecordTarget(record),
-        });
         updateOperationFromSteps({
           tone: "error",
           title: "应用失败",
@@ -3060,7 +3098,7 @@ async function applyProfile() {
       }
       elements.runtimeMode.textContent = "准备失败";
       const readable = getReadableError(error);
-      elements.deviceNote.textContent = readable;
+      renderDeviceModeNote();
       updateOperationFromSteps({
         tone: "error",
         title: "准备失败",
@@ -3110,13 +3148,11 @@ async function applyProfile() {
     networkMode: getNetworkModeLabel(),
     performanceSnapshot: getLatestPerformanceSample(),
   };
-  const startTitle = profile.presetKey === "normal" ? "正在恢复正常网络" : `正在应用：${record.displayNameZh}`;
   setOperationStatus({
     tone: "info",
-    title: startTitle,
-    message: `${record.networkMode} · ${getRecordTarget(record)}`,
+    title: getApplyOperationStartTitle(profile),
+    message: getApplyOperationStartMessage(profile),
     steps: [],
-    expanded: false,
   });
 
   if (isMacGlobalMode()) {
@@ -3136,14 +3172,6 @@ async function applyProfile() {
       elements.runtimeMode.textContent = "下发已阻止";
       const readable = getReadableError(error);
       elements.deviceNote.textContent = readable;
-      setCurrentEffect({
-        tone: "error",
-        title: "未生效",
-        meta: readable,
-        profile: null,
-        modeLabel: record.networkMode,
-        target: getRecordTarget(record),
-      });
       updateOperationFromSteps({
         tone: "error",
         title: "应用失败",
@@ -3167,15 +3195,11 @@ async function applyProfile() {
     }
     elements.runtimeMode.textContent = "下发已阻止";
     const readable = getReadableError(error);
-    elements.deviceNote.textContent = readable;
-    setCurrentEffect({
-      tone: "error",
-      title: "未生效",
-      meta: readable,
-      profile: null,
-      modeLabel: record.networkMode,
-      target: getRecordTarget(record),
-    });
+    if (isMacLocalMode()) {
+      renderDeviceModeNote();
+    } else {
+      elements.deviceNote.textContent = readable;
+    }
     updateOperationFromSteps({
       tone: "error",
       title: "应用失败",
@@ -3189,11 +3213,11 @@ async function applyProfile() {
   }
 
   elements.runtimeMode.textContent = "正在下发";
-  elements.deviceNote.textContent = isMacGlobalMode()
-    ? `正在下发 ${record.displayNameZh} 到整台 Mac 外网流量...`
-    : isMacUnityMode()
-      ? `正在下发 ${record.displayNameZh} 到 Mac Unity 仿真目标 ${record.targetApp}...`
-      : `正在下发 ${record.displayNameZh} 到 ${record.deviceIp}...`;
+  if (isMacLocalMode()) {
+    renderDeviceModeNote();
+  } else {
+    elements.deviceNote.textContent = `正在下发 ${record.displayNameZh} 到 ${record.deviceIp}...`;
+  }
   try {
     const data = await postAgentJson("/api/weaknet/apply", {
       profile,
@@ -3207,12 +3231,16 @@ async function applyProfile() {
     rememberNetworkCurveLimit(profile, data.mode || "weaknet");
     const isNormal = profile.presetKey === "normal";
     elements.runtimeMode.textContent = isNormal ? "正常网络" : `${record.displayNameZh} 已生效`;
-    elements.deviceNote.textContent = data.message || `${record.displayNameZh} 已下发到 ${record.deviceIp}`;
+    if (isMacLocalMode()) {
+      renderDeviceModeNote();
+    } else {
+      elements.deviceNote.textContent = data.message || `${record.displayNameZh} 已下发到 ${record.deviceIp}`;
+    }
     setCurrentEffectFromRecord(record, profile, "ok");
     updateOperationFromSteps({
       tone: "ok",
-      title: isNormal ? "清除完成" : "应用完成",
-      message: isNormal ? "正常网络已恢复。" : `${record.displayNameZh} 已对 ${getRecordTarget(record)} 生效。`,
+      title: getApplyOperationDoneTitle(profile),
+      message: getApplyOperationDoneMessage(profile),
       steps: data.steps,
     });
     showToast(isNormal ? "已恢复正常网络" : `已生效：${record.displayNameZh}`, "success", { duration: 4600 });
@@ -3224,15 +3252,11 @@ async function applyProfile() {
     }
     elements.runtimeMode.textContent = "下发失败";
     const readable = getReadableError(error);
-    elements.deviceNote.textContent = `弱网下发失败：${readable}`;
-    setCurrentEffect({
-      tone: "error",
-      title: "未生效",
-      meta: readable,
-      profile: null,
-      modeLabel: record.networkMode,
-      target: getRecordTarget(record),
-    });
+    if (isMacLocalMode()) {
+      renderDeviceModeNote();
+    } else {
+      elements.deviceNote.textContent = `弱网下发失败：${readable}`;
+    }
     updateOperationFromSteps({
       tone: "error",
       title: "应用失败",
@@ -3269,9 +3293,8 @@ async function clearWeakNet() {
       setOperationStatus({
         tone: "info",
         title: "正在恢复正常网络",
-        message: "Android VPN Agent · 正在清除手机端弱网",
+        message: "正在清理手机端弱网规则。",
         steps: [],
-        expanded: false,
       });
       const data = await postAgentJson("/api/android-vpn/clear", { serial: device.serial });
       state.agent.androidVpn = data.status || state.agent.androidVpn;
@@ -3281,7 +3304,7 @@ async function clearWeakNet() {
       setCurrentEffect({
         tone: "ok",
         title: "正常网络",
-        meta: "Android VPN 已停止，未施加弱网",
+        meta: "未施加弱网",
         profile: null,
         modeLabel: "Android VPN Agent",
         target: elements.targetApp.value.trim() || "目标应用",
@@ -3289,7 +3312,7 @@ async function clearWeakNet() {
       updateOperationFromSteps({
         tone: "ok",
         title: "清除完成",
-        message: "Android VPN 已停止，正常网络已恢复。",
+        message: "手机端弱网规则已清理。",
         steps: data.steps,
       });
       renderGatewayScope();
@@ -3318,19 +3341,22 @@ async function clearWeakNet() {
   setOperationStatus({
     tone: "info",
     title: "正在恢复正常网络",
-    message: `${getNetworkModeLabel()} · 正在清理弱网规则`,
+    message: "正在清理弱网规则。",
     steps: [],
-    expanded: false,
   });
   try {
     const data = await postAgentJson("/api/weaknet/clear", {});
     elements.runtimeMode.textContent = "正常网络";
-    elements.deviceNote.textContent = data.message || "弱网规则已清理";
+    if (isMacLocalMode()) {
+      renderDeviceModeNote();
+    } else {
+      elements.deviceNote.textContent = data.message || "弱网规则已清理";
+    }
     rememberNetworkCurveLimit(null, "normal");
     setCurrentEffect({
       tone: "ok",
       title: "正常网络",
-      meta: "Mac 弱网规则已清理，未施加弱网",
+      meta: "未施加弱网",
       profile: null,
       modeLabel: getNetworkModeLabel(),
       target: "当前模式",
@@ -3338,7 +3364,7 @@ async function clearWeakNet() {
     updateOperationFromSteps({
       tone: "ok",
       title: "清除完成",
-      message: "Mac 弱网规则已清理，正常网络已恢复。",
+      message: "弱网规则已清理。",
       steps: data.steps,
     });
     renderGatewayScope();
@@ -3350,7 +3376,11 @@ async function clearWeakNet() {
     }
     elements.runtimeMode.textContent = "清除失败";
     const readable = getReadableError(error);
-    elements.deviceNote.textContent = `清除弱网失败：${readable}`;
+    if (isMacLocalMode()) {
+      renderDeviceModeNote();
+    } else {
+      elements.deviceNote.textContent = `清除弱网失败：${readable}`;
+    }
     updateOperationFromSteps({
       tone: "error",
       title: "清除失败",
@@ -3389,7 +3419,6 @@ async function stopService() {
     title: "正在停止服务",
     message: "正在恢复正常网络并关闭本机弱网 Agent。",
     steps: [],
-    expanded: false,
   });
 
   try {
@@ -3406,18 +3435,11 @@ async function stopService() {
     state.agent.metricsSource = "none";
     elements.runtimeMode.textContent = "服务已停止";
     elements.deviceNote.textContent = SERVICE_STOPPED_MESSAGE;
-    setCurrentEffect({
-      tone: "warn",
-      title: "服务已停止",
-      meta: SERVICE_STOPPED_MESSAGE,
-      profile: null,
-      modeLabel: getNetworkModeLabel(),
-      target: "本机服务",
-    });
+    setServiceUnavailableEffect();
     updateOperationFromSteps({
       tone: "ok",
       title: "服务已停止",
-      message: SERVICE_STOPPED_MESSAGE,
+      message: "Agent 已关闭。",
       steps: getStopServiceSteps(data),
     });
     renderServiceActionButton();
@@ -3456,7 +3478,6 @@ async function restartService() {
     title: "正在重启服务",
     message: "正在请求 macOS 授权并重新启动弱网服务。",
     steps: [],
-    expanded: false,
   });
 
   try {
@@ -3603,11 +3624,6 @@ function bindEvents() {
   elements.startMonitorButton.addEventListener("click", startMonitoring);
   elements.stopMonitorButton.addEventListener("click", stopMonitoring);
   elements.clearHistoryButton.addEventListener("click", clearHistory);
-  elements.copyButton.addEventListener("click", () => {
-    if (!state.operation.steps.length) return;
-    state.operation.expanded = !state.operation.expanded;
-    renderOperationStatus();
-  });
 
   elements.gatewayToggleButton.addEventListener("click", () => {
     state.gateway.expanded = !state.gateway.expanded;

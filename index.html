@@ -121,13 +121,6 @@
                 <button class="gateway-action" id="gatewayCopyButton" type="button">复制</button>
               </div>
             </section>
-            <section class="device-effect-card" id="deviceEffectCard" aria-live="polite">
-              <div class="device-effect-head">
-                <span id="deviceEffectKicker">当前状态</span>
-                <strong id="deviceEffectTitle">未连接</strong>
-              </div>
-              <p id="deviceEffectMeta">启动本地 Agent 后显示真实弱网状态。</p>
-            </section>
             <p class="device-note" id="deviceNote">请启动本地 Agent 后执行真实弱网操作。</p>
           </div>
         </section>
@@ -266,7 +259,6 @@
               <p class="eyebrow" id="commandEyebrow">Operation</p>
               <h2 id="command-title">操作详情</h2>
             </div>
-            <button class="ghost-button" id="copyButton" type="button">展开</button>
           </div>
           <section class="operation-card" id="operationCard" aria-live="polite">
             <div class="operation-summary">
@@ -276,7 +268,7 @@
                 <span id="operationMessage">应用预设或清除弱网后展示结果。</span>
               </div>
             </div>
-            <div class="operation-steps" id="operationSteps" hidden></div>
+            <div class="operation-steps" id="operationSteps"></div>
           </section>
           <pre id="commandPreview" hidden></pre>
         </section>

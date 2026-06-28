@@ -155,7 +155,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(240px, 0.8fr) minmax(360px, 1.4fr) minmax(320px, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .panel {
@@ -182,6 +182,14 @@ button:disabled {
 .command-panel,
 .history-panel {
   grid-column: span 1;
+}
+
+.preset-panel,
+.editor-panel,
+.command-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .section-heading {
@@ -459,74 +467,6 @@ button:disabled {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.device-effect-card {
-  display: grid;
-  gap: 5px;
-  padding: 11px 12px;
-  border: 1px solid #d7e4ea;
-  border-radius: 8px;
-  background: #f8fbfc;
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.device-effect-card.status-ok {
-  border-color: #cce7d7;
-  background: #f5fbf7;
-  box-shadow: inset 3px 0 0 var(--ok);
-}
-
-.device-effect-card.status-warn {
-  border-color: #eed9ad;
-  background: #fffaf0;
-  box-shadow: inset 3px 0 0 #c27803;
-}
-
-.device-effect-card.status-error {
-  border-color: #efc1bb;
-  background: #fff7f5;
-  box-shadow: inset 3px 0 0 var(--danger);
-}
-
-.device-effect-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.device-effect-head span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.device-effect-head strong {
-  min-width: 0;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 900;
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.device-effect-card.status-ok strong {
-  color: var(--ok);
-}
-
-.device-effect-card.status-error strong {
-  color: var(--danger);
-}
-
-.device-effect-card p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
 }
 
 .gateway-scope {
@@ -1604,6 +1544,7 @@ button:focus-visible {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+  margin-top: auto;
 }
 
 .primary-button,
@@ -1655,7 +1596,10 @@ pre {
 
 .operation-card {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
+  flex: 1 1 auto;
+  height: 100%;
   min-height: 152px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -1731,8 +1675,9 @@ pre {
 
 .operation-steps {
   display: grid;
+  align-content: start;
   gap: 7px;
-  max-height: 230px;
+  min-height: 0;
   overflow: auto;
   padding-top: 10px;
   border-top: 1px solid rgba(220, 236, 240, 0.12);
