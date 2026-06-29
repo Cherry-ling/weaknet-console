@@ -160,7 +160,7 @@ const THEMES = [
 ];
 const DEFAULT_THEME = "terminal-aurora";
 const THEME_KEYS = new Set(THEMES.map((theme) => theme.key));
-const SERVICE_STOPPED_MESSAGE = "弱网服务已停止，请点击重启服务，或重新打开弱网控制台.app重新启动服务。";
+const SERVICE_STOPPED_MESSAGE = "弱网服务已停止，请点击重启服务，或重新打开弱网控制台启动脚本重新启动服务。";
 const SERVICE_UNAVAILABLE_EFFECT_MESSAGE = "Agent 已停止，无法采集或施加弱网。";
 const NETWORK_WAVE_MODE = {
   key: "subway-elevator",
@@ -187,6 +187,8 @@ const state = {
     metricsSource: "none",
     androidVpn: null,
     macUnityTargets: [],
+    platform: "",
+    weaknetBackend: "",
   },
   performance: {
     running: false,
@@ -498,9 +500,21 @@ function isLikelyLocalAgent() {
   return location.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
 }
 
+function isWindowsAgent() {
+  return state.agent.platform === "win32";
+}
+
+function getHostLabel() {
+  return isWindowsAgent() ? "Windows" : "Mac";
+}
+
+function getGatewayHostLabel() {
+  return isWindowsAgent() ? "Windows" : "macOS";
+}
+
 function requireLocalAgent() {
   if (isLikelyLocalAgent()) return true;
-  const message = "请通过本地 Agent 页面执行真实弱网操作：运行 open-weaknet.command 后访问 http://localhost:8123。";
+  const message = "请通过本地 Agent 页面执行真实弱网操作：运行对应启动脚本后访问 http://localhost:8123。";
   elements.runtimeMode.textContent = "Agent 未连接";
   elements.deviceNote.textContent = message;
   showToast(message, "error", { duration: 7600 });
@@ -561,6 +575,18 @@ function requireServiceRunning() {
   if (!state.serviceStopped) return true;
   showServiceStoppedNotice();
   return false;
+}
+
+async function refreshAgentHealth() {
+  if (!isLikelyLocalAgent()) return null;
+  try {
+    const health = await fetchAgentJson("/api/health");
+    state.agent.platform = health.platform || state.agent.platform || "";
+    state.agent.weaknetBackend = health.weaknetBackend || state.agent.weaknetBackend || "";
+    return health;
+  } catch {
+    return null;
+  }
 }
 
 function handleServiceStoppedError(error) {
@@ -796,10 +822,15 @@ async function refreshAdminStatus() {
   try {
     const status = await fetchAgentJson("/api/admin/status");
     state.agent.admin = status;
-    if (status.ok && status.mode === "root") {
+    state.agent.platform = status.platform || state.agent.platform || "";
+    if (status.ok && status.mode === "windows-admin") {
+      elements.runtimeMode.textContent = "Windows 管理员模式";
+    } else if (status.ok && status.mode === "root") {
       elements.runtimeMode.textContent = "管理员模式";
     } else if (status.ok) {
       elements.runtimeMode.textContent = "sudo 已授权";
+    } else if (status.mode === "windows-missing") {
+      elements.runtimeMode.textContent = "需要管理员权限";
     } else {
       elements.runtimeMode.textContent = "仅监控模式";
     }
@@ -847,6 +878,7 @@ async function ensureWeaknetDeviceReady(profile) {
 async function assertTrafficPathReady(record, profile) {
   if (isMacLocalMode()) return null;
   if (profile.presetKey === "normal" || !isLikelyLocalAgent()) return null;
+  if (isWindowsAgent()) return null;
   if (!state.agent.selectedSerial) {
     throw new Error("缺少 Android 设备序列号，无法检查流量路径");
   }
@@ -906,14 +938,14 @@ function isMacLocalMode() {
 
 function getNetworkModeLabel() {
   if (isAndroidVpnMode()) return "Android VPN Agent";
-  if (isMacGlobalMode()) return "Mac 全局弱网";
-  if (isMacUnityMode()) return "Mac Unity 真实断网仿真";
-  return "macOS 网关";
+  if (isMacGlobalMode()) return `${getHostLabel()} 全局弱网`;
+  if (isMacUnityMode()) return isWindowsAgent() ? "Windows 目标弱网" : "Mac Unity 真实断网仿真";
+  return `${getGatewayHostLabel()} 网关`;
 }
 
 function getActionTargetLabel() {
-  if (isMacGlobalMode()) return "整台 Mac 外网流量";
-  if (isMacUnityMode()) return elements.targetApp.value.trim() || "Unity / CDN / SDK 目标";
+  if (isMacGlobalMode()) return `整台 ${getHostLabel()} 外网流量`;
+  if (isMacUnityMode()) return elements.targetApp.value.trim() || (isWindowsAgent() ? "目标 IP / 端口" : "Unity / CDN / SDK 目标");
   if (isAndroidVpnMode()) return elements.targetApp.value.trim() || "未填写目标包名";
   return elements.deviceIp.value.trim() || "未填写设备 IP";
 }
@@ -983,6 +1015,7 @@ function formatEffectSummary(profile) {
 
 function getRecordTarget(record = {}) {
   if (record.networkMode === "Mac 全局弱网") return "整台 Mac 外网流量";
+  if (record.networkMode === "Windows 全局弱网") return "整台 Windows 外网流量";
   if (record.targetApp && record.targetApp !== "未填写") return record.targetApp;
   if (record.deviceIp && record.deviceIp !== "未填写") return record.deviceIp;
   return "未选择目标";
@@ -1294,7 +1327,7 @@ function renderGatewayTable() {
 
 function renderGatewayScope() {
   if (!elements.gatewayScope) return;
-  const shouldShow = isMacUnityMode();
+  const shouldShow = isMacUnityMode() && !isWindowsAgent();
   setHidden(elements.gatewayScope, !shouldShow);
   if (!shouldShow) return;
 
@@ -1394,7 +1427,84 @@ function updateDeviceActionLayout() {
   }
 }
 
+function getModeUiMeta(mode) {
+  const host = getHostLabel();
+  const gatewayHost = getGatewayHostLabel();
+  const windows = isWindowsAgent();
+  const map = {
+    "android-vpn": {
+      icon: "AD",
+      name: "Android VPN Agent",
+      title: "Android VPN",
+      description: "通过 ADB + SOCKS，对目标包名生效",
+      tip:
+        `底层逻辑：通过手机端 VPN Agent 接管 Android 指定包名流量，普通弱网经 ${host} SOCKS + ${windows ? "WinDivert" : "pf/dnctl"}，100% 丢包在手机端直接阻断。使用方法：连接 Android 设备，填写目标包名，必要时先安装 Agent 并授权 VPN，再应用预设。`,
+    },
+    macos: {
+      icon: "GW",
+      name: `${gatewayHost} 网关`,
+      title: `${gatewayHost} 网关`,
+      description: "对指定测试设备 IP 施加规则",
+      tip: windows
+        ? "底层逻辑：让测试设备流量经过 Windows，再按设备 IP 用 WinDivert network-forward 规则施加带宽、延迟、丢包或阻断。使用方法：填写设备 IP，并确保测试设备流量经过这台 Windows。"
+        : "底层逻辑：让测试设备流量经过 Mac，再按设备 IP 用 pf/dnctl 对转发流量施加带宽、延迟、丢包或阻断。使用方法：填写设备 IP，确认 Android 或 iOS 流量已走 Mac 网关，然后应用预设。",
+    },
+    "mac-global": {
+      icon: windows ? "WG" : "MG",
+      name: `${host} 全局弱网`,
+      title: `${host} 全局`,
+      description: `对 ${host} 所有非 localhost 网络流量生效`,
+      tip: windows
+        ? "底层逻辑：使用 Windows WinDivert 捕获整台 Windows 的非 loopback 出入站流量，在用户态施加延迟、抖动、丢包、限速和断续。使用方法：只选择该模式并应用预设；清除弱网即可恢复。"
+        : "底层逻辑：接入弱网工具.app 的全局 pf + dnctl/dummynet 方案，把整台 Mac 非 lo0 的 TCP/UDP 流量导入 pipe。使用方法：只选择该模式并应用预设；会影响浏览器、Unity、SDK、CDN 等所有外网流量，清除弱网即可恢复。",
+    },
+    "mac-unity": {
+      icon: windows ? "WT" : "MU",
+      name: windows ? "Windows 目标弱网" : "Mac Unity 真实断网仿真",
+      title: windows ? "Windows 目标" : "Mac Unity",
+      description: windows ? "针对指定 IPv4 或 IPv4:端口" : "针对 Unity 编辑器 / 播放器及资源请求",
+      tip: windows
+        ? "底层逻辑：用 WinDivert 只捕获指定 IPv4 或 IPv4:端口 的出入站流量，并施加延迟、丢包、限速和断续。使用方法：填写目标 IP 或 IP:端口 后应用预设。"
+        : "底层逻辑：限制内置 Unity 业务、CDN、SDK、直连服务器目标，并清理目标旧连接 state，让 Unity 更接近真实断网/恢复表现。使用方法：选择该模式后直接应用预设；一般不用手动填写目标。",
+    },
+  };
+  return map[mode] || map["mac-global"];
+}
+
+function updateModeTextForPlatform() {
+  if (elements.networkMode) {
+    [...elements.networkMode.options].forEach((option) => {
+      option.textContent = getModeUiMeta(option.value).name;
+    });
+  }
+
+  if (elements.modeCardList) {
+    elements.modeCardList.querySelectorAll("[data-mode]").forEach((button) => {
+      const meta = getModeUiMeta(button.dataset.mode);
+      const icon = button.querySelector(".mode-card-icon");
+      const title = button.querySelector("strong");
+      const description = button.querySelector("em");
+      if (icon) icon.textContent = meta.icon;
+      if (title) title.textContent = meta.title;
+      if (description) description.textContent = meta.description;
+    });
+  }
+
+  if (elements.modeList) {
+    elements.modeList.querySelectorAll("[data-mode]").forEach((option) => {
+      const meta = getModeUiMeta(option.dataset.mode);
+      const name = option.querySelector(".mode-name");
+      const tip = option.querySelector(".mode-tip");
+      const bubble = option.querySelector(".mode-tip-bubble");
+      if (name) name.textContent = meta.name;
+      if (tip) tip.setAttribute("aria-label", `${meta.name} 说明`);
+      if (bubble) bubble.textContent = meta.tip;
+    });
+  }
+}
+
 function updateModeListUi() {
+  updateModeTextForPlatform();
   const mode = getNetworkMode();
   let activeOption = null;
   if (elements.modeList) {
@@ -1413,13 +1523,12 @@ function updateModeListUi() {
     });
   }
   if (activeOption && elements.modeTriggerLabel) {
-    elements.modeTriggerLabel.textContent = activeOption.querySelector(".mode-name")?.textContent || getNetworkModeLabel();
+    elements.modeTriggerLabel.textContent = getModeUiMeta(mode).name;
   }
   if (activeOption && elements.modeTriggerTip && elements.modeTriggerTipBubble) {
-    const tipText = activeOption.querySelector(".mode-tip-bubble")?.textContent || "";
-    const tipLabel = activeOption.querySelector(".mode-tip")?.getAttribute("aria-label") || `${getNetworkModeLabel()} 说明`;
-    elements.modeTriggerTip.setAttribute("aria-label", tipLabel);
-    elements.modeTriggerTipBubble.textContent = tipText;
+    const meta = getModeUiMeta(mode);
+    elements.modeTriggerTip.setAttribute("aria-label", `${meta.name} 说明`);
+    elements.modeTriggerTipBubble.textContent = meta.tip;
   }
 }
 
@@ -1475,32 +1584,34 @@ function updateNetworkModeUi() {
     elements.targetAppLabel.textContent = isMacGlobalMode()
       ? "影响范围"
       : isMacUnityMode()
-        ? "Unity 相关目标"
+        ? isWindowsAgent()
+          ? "目标 IP / 端口"
+          : "Unity 相关目标"
         : "目标游戏";
   }
   if (isMacGlobalMode()) {
-    elements.targetApp.value = "整台 Mac 外网流量（localhost 不受影响）";
-    elements.targetApp.placeholder = "整台 Mac 外网流量";
+    elements.targetApp.value = `整台 ${getHostLabel()} 外网流量（localhost 不受影响）`;
+    elements.targetApp.placeholder = `整台 ${getHostLabel()} 外网流量`;
     elements.targetApp.disabled = true;
     elements.installVpnButton.disabled = true;
     elements.authorizeVpnButton.disabled = true;
     elements.foregroundButton.disabled = true;
     renderDeviceModeNote();
   } else if (isMacUnityMode()) {
-    if (elements.targetApp.value.trim() === "com.example.game" || elements.targetApp.value.startsWith("整台 Mac 外网")) {
+    if (elements.targetApp.value.trim() === "com.example.game" || elements.targetApp.value.startsWith("整台 ")) {
       elements.targetApp.value = "";
     }
     elements.targetApp.disabled = false;
-    elements.targetApp.placeholder = "例如 1.2.3.4:443 或 api.example.com";
+    elements.targetApp.placeholder = isWindowsAgent() ? "例如 1.2.3.4:443" : "例如 1.2.3.4:443 或 api.example.com";
     elements.installVpnButton.disabled = true;
     elements.authorizeVpnButton.disabled = true;
     elements.foregroundButton.disabled = true;
     renderDeviceModeNote();
   } else {
     const targetValue = elements.targetApp.value.trim();
-    if (isAndroidVpnMode() && (targetValue.startsWith("整台 Mac 外网") || targetValue.includes(":") || targetValue.includes(","))) {
+    if (isAndroidVpnMode() && (targetValue.startsWith("整台 ") || targetValue.includes(":") || targetValue.includes(","))) {
       elements.targetApp.value = "com.example.game";
-    } else if (elements.targetApp.value.startsWith("整台 Mac 外网")) {
+    } else if (elements.targetApp.value.startsWith("整台 ")) {
       elements.targetApp.value = isAndroidVpnMode() ? "com.example.game" : "";
     }
     elements.targetApp.disabled = false;
@@ -1518,13 +1629,15 @@ function updateNetworkModeUi() {
 function renderDeviceModeNote() {
   if (!elements.deviceNote) return;
   if (isMacGlobalMode()) {
-    elements.deviceNote.textContent = "Mac 全局弱网会影响整台 Mac 的非 localhost 网络，效果最接近真实断网/弱网。";
+    elements.deviceNote.textContent = `${getHostLabel()} 全局弱网会影响整台 ${getHostLabel()} 的非 localhost 网络，效果最接近真实断网/弱网。`;
   } else if (isMacUnityMode()) {
-    elements.deviceNote.textContent = "Mac Unity 真实断网仿真会限制 Unity 业务/CDN/SDK 相关目标；完整目标见受限网关。";
+    elements.deviceNote.textContent = isWindowsAgent()
+      ? "Windows 目标弱网会限制指定 IPv4 或 IPv4:端口 的流量；域名目标会在后续接 DNS 解析。"
+      : "Mac Unity 真实断网仿真会限制 Unity 业务/CDN/SDK 相关目标；完整目标见受限网关。";
   } else if (isAndroidVpnMode()) {
     elements.deviceNote.textContent = "Android VPN Agent 模式会在手机端按目标包名接管流量；先选择设备和包名，再应用预设。";
   } else if (getNetworkMode() === "macos") {
-    elements.deviceNote.textContent = "macOS 网关模式按设备 IP 控制经过 Mac 的测试机流量。";
+    elements.deviceNote.textContent = `${getGatewayHostLabel()} 网关模式按设备 IP 控制经过 ${getHostLabel()} 的测试机流量。`;
   }
 }
 
@@ -1548,12 +1661,12 @@ function renderDeviceModeSummary() {
   const modeLabel = getNetworkModeLabel();
   const rows = isMacGlobalMode()
     ? [
-        ["影响范围", "整台 Mac 外网流量"],
+        ["影响范围", `整台 ${getHostLabel()} 外网流量`],
         ["排除范围", "localhost / 127.0.0.1"],
         ["当前规则", getModeRuleState(modeLabel)],
       ]
     : [
-        ["覆盖范围", "Unity 业务 / CDN / SDK"],
+        ["覆盖范围", isWindowsAgent() ? "指定 IPv4 / 端口" : "Unity 业务 / CDN / SDK"],
         ["目标来源", state.agent.macUnityTargets.length ? "内置目标" : getMacUnityTargetEndpoint() ? "手动输入" : "等待配置"],
         ["受限目标", state.agent.macUnityTargets.length ? `${state.agent.macUnityTargets.length} 个目标` : getMacUnityTargetEndpoint() ? "已填写" : "未配置"],
         ["当前规则", getModeRuleState(modeLabel)],
@@ -1585,12 +1698,19 @@ function assertMacUnityTargetReady(profile) {
   if (!isMacUnityMode() || profile.presetKey === "normal") return;
   const target = getMacUnityTargetsForRequest();
   if (!target) {
-    throw new Error("Mac Unity 真实断网仿真需要内置目标；请确认 mac-unity-targets.json 已配置 host:port");
+    throw new Error(isWindowsAgent() ? "Windows 目标弱网需要填写 IPv4 或 IPv4:端口" : "Mac Unity 真实断网仿真需要内置目标；请确认 mac-unity-targets.json 已配置 host:port");
   }
 }
 
 async function loadMacUnityBuiltinTargets(fillInput = false) {
   if (!isLikelyLocalAgent()) return [];
+  if (isWindowsAgent()) {
+    state.agent.macUnityTargets = [];
+    renderDeviceModeSummary();
+    renderGatewayScope();
+    renderCommandPreview();
+    return [];
+  }
   try {
     const data = await fetchAgentJson("/api/mac-unity/targets");
     const targets = Array.isArray(data.targets) ? data.targets.filter(Boolean) : [];
@@ -1647,7 +1767,9 @@ function getAndroidVpnProfileSupport(profile) {
   return {
     supported: true,
     mode: "socks",
-    message: "Android VPN Agent 将通过 Mac SOCKS 出口和 pf/dnctl 执行该弱网预设",
+    message: isWindowsAgent()
+      ? "Android VPN Agent 将通过 Windows SOCKS 出口和 WinDivert 执行该弱网预设"
+      : "Android VPN Agent 将通过 Mac SOCKS 出口和 pf/dnctl 执行该弱网预设",
   };
 }
 
@@ -1660,7 +1782,7 @@ function describeAndroidVpnStatus(data) {
   }
   if (status.mode === "socks" && status.running) {
     if (data.macSocks && !data.macSocks.active) {
-      return "Android VPN 已运行，但 Mac SOCKS 出口未运行；请重新点击应用预设";
+      return `Android VPN 已运行，但${getHostLabel()} SOCKS 出口未运行；请重新点击应用预设`;
     }
     return `Android VPN 弱网生效：${status.targetPackage || "目标应用"}`;
   }
@@ -1805,8 +1927,22 @@ function applySelectedDeviceToForm() {
 
 async function refreshDevices() {
   if (!isLikelyLocalAgent()) {
-    elements.deviceNote.textContent = "本地 Agent 未连接。请运行 open-weaknet.command 后访问 http://localhost:8123。";
+    elements.deviceNote.textContent = "本地 Agent 未连接。请运行对应启动脚本后访问 http://localhost:8123。";
     setMonitorStatusText("未采集");
+    renderPerformanceStatus();
+    return;
+  }
+
+  if (isMacLocalMode()) {
+    state.agent.available = true;
+    await refreshAdminStatus();
+    elements.deviceStatus.textContent = "本机模式";
+    renderDeviceModeNote();
+    updateNetworkModeUi();
+    if (isMacUnityMode()) {
+      await loadMacUnityBuiltinTargets(true);
+    }
+    setMonitorStatusText("本机就绪");
     renderPerformanceStatus();
     return;
   }
@@ -2962,6 +3098,65 @@ function inferDisconnectMode(profile) {
   return "none";
 }
 
+function pushWindowsWeaknetCommandNotes(lines, profile) {
+  if (profile.jitterMs > 0) {
+    lines.push("", `# 抖动=${formatMs(profile.jitterMs)}：Windows 后端会在包调度时加入随机延迟`);
+  }
+  if (isNetworkWaveProfile(profile)) {
+    lines.push(
+      "",
+      "# 网络波动模式：Windows 后端会在运行时动态切换延迟/丢包/带宽",
+      "# 常规波动：下行 50K~3M，上行 20K~1M，延迟 30~400ms，丢包 0~5%",
+      "# 15% 信号丢失：下行 5~30K，上行 2~15K，延迟 500~1200ms，丢包 10~30%",
+    );
+  }
+  if (profile.disconnectMode === "periodic") {
+    lines.push("", `# 断续网络：每 ${profile.disconnectIntervalSec}s 阻断 ${profile.disconnectDurationSec}s`);
+  }
+}
+
+function renderWindowsCommandPreview(profile, deviceIp, targetEndpoint) {
+  const oneWayDelay = getSingleWayDelay(profile);
+  const target = targetEndpoint && targetEndpoint !== "com.example.game" ? targetEndpoint : "1.2.3.4:443";
+  const modeLabel = isMacGlobalMode() ? "Windows 全局弱网" : isMacUnityMode() ? "Windows 目标弱网" : "Windows 网关";
+  const scope = isMacGlobalMode() ? "win-global" : isMacUnityMode() ? "win-target" : "win-gateway";
+
+  if (profile.presetKey === "normal") {
+    elements.commandPreview.textContent = [
+      `# ${modeLabel}：清理 Windows WinDivert 弱网后端`,
+      "POST /api/weaknet/clear",
+      "# Agent 会停止 Weaknet.WinDivertShaper.exe，并删除 pid 文件",
+    ].join("\n");
+    return;
+  }
+
+  const lines = [
+    `# ${profile.displayNameZh}：${modeLabel}`,
+    `# backend=Weaknet.WinDivertShaper / scope=${scope}`,
+    `# RTT=${formatMs(profile.latencyRttMs)}，单向延迟≈${formatMs(oneWayDelay)}，丢包=${formatLoss(profile.packetLossPercent)}`,
+  ];
+
+  if (isMacGlobalMode()) {
+    lines.push("# filter: outbound/inbound，排除 loopback");
+  } else if (isMacUnityMode()) {
+    lines.push(`# target=${target}`, "# 首版 Windows 目标弱网要求填写 IPv4 或 IPv4:端口");
+  } else {
+    lines.push(`# device_ip=${deviceIp}`, "# layer=network-forward，用于经过 Windows 的测试机流量");
+  }
+
+  lines.push(
+    "# config: windows-backend/runtime/ui/weaknet-win32-config.json",
+    "# status: windows-backend/runtime/ui/weaknet-win32-status.json",
+    "Weaknet.WinDivertShaper.exe run --config <config> --status <status> --pid <pid>",
+  );
+
+  if (profile.disconnectMode === "always") {
+    lines.push("# 100% 丢包/断网由后端直接丢弃匹配包实现");
+  }
+  pushWindowsWeaknetCommandNotes(lines, profile);
+  elements.commandPreview.textContent = lines.join("\n");
+}
+
 function renderCommandPreview() {
   const profile = getProfileForApply();
   const deviceIp = elements.deviceIp.value.trim() || "192.168.2.12";
@@ -2972,10 +3167,16 @@ function renderCommandPreview() {
     elements.commandEyebrow.textContent = isAndroidVpnMode()
       ? "Android VPN Agent"
       : isMacGlobalMode()
-        ? "Mac Global"
+        ? isWindowsAgent()
+          ? "Windows Global"
+          : "Mac Global"
         : isMacUnityMode()
-          ? "Mac Unity"
-        : "macOS Gateway";
+          ? isWindowsAgent()
+            ? "Windows Target"
+            : "Mac Unity"
+        : isWindowsAgent()
+          ? "Windows Gateway"
+          : "macOS Gateway";
   }
 
   if (isAndroidVpnMode()) {
@@ -3001,11 +3202,13 @@ function renderCommandPreview() {
 
     if (support.mode === "socks") {
       const lines = [
-        `# ${profile.displayNameZh}：Android VPN Agent + Mac SOCKS 弱网`,
+        `# ${profile.displayNameZh}：Android VPN Agent + ${getHostLabel()} SOCKS 弱网`,
         `# serial=${serial}`,
         `# target_package=${targetPackage}`,
-        "# Mac 控制台会启动 SOCKS5 出口 0.0.0.0:8124，仅允许当前 Android IP 连接",
-        "# Mac 控制台会用 pf/dnctl 对 Android<->Mac SOCKS 隧道施加延迟/丢包/带宽/断续",
+        `# ${getHostLabel()} 控制台会启动 SOCKS5 出口 0.0.0.0:8124，仅允许当前 Android IP 连接`,
+        isWindowsAgent()
+          ? "# Windows 控制台会用 WinDivert 对 Android<->Windows SOCKS 隧道施加延迟/丢包/带宽/断续"
+          : "# Mac 控制台会用 pf/dnctl 对 Android<->Mac SOCKS 隧道施加延迟/丢包/带宽/断续",
         `adb -s ${serial} shell am broadcast -n com.weaknet.agent/.CommandReceiver -a com.weaknet.agent.APPLY --es profileBase64 '<profile-json-with-socks-endpoint>' --es targetPackage ${targetPackage}`,
       ];
       pushNetworkWaveCommandNotes(lines, profile);
@@ -3022,6 +3225,11 @@ function renderCommandPreview() {
       "# 首次使用需要在手机上同意 VPN 权限",
       `adb -s ${serial} shell am broadcast -n com.weaknet.agent/.CommandReceiver -a com.weaknet.agent.APPLY --es profileBase64 '<profile-json-base64>' --es targetPackage ${targetPackage}`,
     ].join("\n");
+    return;
+  }
+
+  if (isWindowsAgent()) {
+    renderWindowsCommandPreview(profile, deviceIp, targetPackage);
     return;
   }
 
@@ -3523,7 +3731,11 @@ async function applyProfile() {
   }
 
   if (isMacLocalMode()) {
-    elements.runtimeMode.textContent = isMacGlobalMode() ? "准备 Mac 全局" : "准备 Mac Unity";
+    elements.runtimeMode.textContent = isMacGlobalMode()
+      ? `准备 ${getHostLabel()} 全局`
+      : isWindowsAgent()
+        ? "准备 Windows 目标"
+        : "准备 Mac Unity";
     try {
       await refreshAdminStatus();
       assertMacUnityTargetReady(profile);
@@ -3579,9 +3791,9 @@ async function applyProfile() {
   const record = {
     ...profile,
     createdAt: now.toLocaleString("zh-CN", { hour12: false }),
-    deviceIp: isMacLocalMode() ? "Mac 本机" : elements.deviceIp.value.trim() || "未填写",
-    platform: isMacLocalMode() ? "macOS" : elements.platform.value === "ios" ? "iOS" : "Android",
-    targetApp: isMacGlobalMode() ? "整台 Mac 外网流量" : elements.targetApp.value.trim() || "未填写",
+    deviceIp: isMacLocalMode() ? `${getHostLabel()} 本机` : elements.deviceIp.value.trim() || "未填写",
+    platform: isMacLocalMode() ? getGatewayHostLabel() : elements.platform.value === "ios" ? "iOS" : "Android",
+    targetApp: isMacGlobalMode() ? `整台 ${getHostLabel()} 外网流量` : elements.targetApp.value.trim() || "未填写",
     networkMode: getNetworkModeLabel(),
     performanceSnapshot: getLatestPerformanceSample(),
   };
@@ -4134,6 +4346,9 @@ async function initApp() {
   updateNetworkModeUi();
   renderAll();
   if (await refreshLauncherGate()) return;
+  await refreshAgentHealth();
+  updateNetworkModeUi();
+  renderAll();
   startNetworkCurve();
   refreshDevices();
 }

@@ -1,22 +1,33 @@
 "use strict";
 
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const DEFAULT_RUNTIME_DIR = path.join(os.tmpdir(), "weaknet-console-win32");
-const DEFAULT_EXE = path.join(
-  __dirname,
-  "..",
-  "..",
-  "windows-backend",
-  "Weaknet.WinDivertShaper",
-  "bin",
-  "Release",
-  "net8.0",
-  "Weaknet.WinDivertShaper.exe",
-);
+const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
+const WINDOWS_BACKEND_ROOT = path.join(PROJECT_ROOT, "windows-backend");
+const DEFAULT_RUNTIME_DIR = path.join(WINDOWS_BACKEND_ROOT, "runtime", "win32");
+const DEFAULT_EXE_CANDIDATES = [
+  path.join(WINDOWS_BACKEND_ROOT, "dist", "win-x64", "Weaknet.WinDivertShaper.exe"),
+  path.join(
+    WINDOWS_BACKEND_ROOT,
+    "Weaknet.WinDivertShaper",
+    "bin",
+    "Release",
+    "net8.0",
+    "win-x64",
+    "publish",
+    "Weaknet.WinDivertShaper.exe",
+  ),
+  path.join(
+    WINDOWS_BACKEND_ROOT,
+    "Weaknet.WinDivertShaper",
+    "bin",
+    "Release",
+    "net8.0",
+    "Weaknet.WinDivertShaper.exe",
+  ),
+];
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -33,6 +44,24 @@ function readJsonIfExists(file) {
   } catch {
     return null;
   }
+}
+
+function findDefaultExecutable() {
+  const envPath = String(process.env.WEAKNET_WIN32_SHAPER || "").trim();
+  if (envPath) return envPath;
+  return DEFAULT_EXE_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || DEFAULT_EXE_CANDIDATES[0];
+}
+
+function isIpv4(value) {
+  const parts = String(value || "").trim().split(".");
+  return (
+    parts.length === 4 &&
+    parts.every((part) => {
+      if (!/^\d+$/.test(part)) return false;
+      const number = Number(part);
+      return number >= 0 && number <= 255;
+    })
+  );
 }
 
 function normalizeProfile(profile = {}) {
@@ -71,7 +100,13 @@ function endpointFilters(targetEndpoint) {
   const match = raw.match(/^([^:\s]+)(?::([0-9]{1,5}))?$/);
   if (!match) throw new Error("targetEndpoint must be an IPv4 address or IPv4:port for the first Windows backend");
   const host = match[1];
+  if (!isIpv4(host)) {
+    throw new Error("targetEndpoint must use IPv4 or IPv4:port for the first Windows backend");
+  }
   const port = match[2] ? Number(match[2]) : null;
+  if (port !== null && (port < 1 || port > 65535)) {
+    throw new Error("targetEndpoint port must be between 1 and 65535");
+  }
   const addressExpr = `ip and (ip.SrcAddr == ${host} or ip.DstAddr == ${host})`;
   const portExpr = port
     ? ` and (tcp.SrcPort == ${port} or tcp.DstPort == ${port} or udp.SrcPort == ${port} or udp.DstPort == ${port})`
@@ -179,7 +214,10 @@ function startWin32Weaknet(input = {}, options = {}) {
     throw new Error("Win32 weaknet backend can only be started on Windows.");
   }
 
-  const executable = options.executable || process.env.WEAKNET_WIN32_SHAPER || DEFAULT_EXE;
+  const executable = options.executable || findDefaultExecutable();
+  if (!fs.existsSync(executable)) {
+    throw new Error(`Windows weaknet executable was not found: ${executable}`);
+  }
   const paths = getRuntimePaths(options);
   const config = options.config || buildWin32WeaknetConfig(input);
   ensureDir(paths.runtimeDir);

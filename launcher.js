@@ -17,8 +17,15 @@ const SERVER_JS = path.join(ROOT, "server.js");
 const RUNTIME_PREFIX = path.join(os.tmpdir(), "weaknet-console-agent-");
 const THEME_PREF_FILE = process.env.WEAKNET_THEME_PREF_FILE || path.join(os.homedir(), ".weaknet-console-theme.json");
 const THEME_KEYS = new Set(["terminal-aurora", "cyber", "classic"]);
-const RUNTIME_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json", "android-agent"];
-const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
+const RUNTIME_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json", "android-agent", "drivers"];
+const SOURCE_SIGNATURE_ITEMS = [
+  "index.html",
+  "app.js",
+  "styles.css",
+  "server.js",
+  "mac-unity-targets.json",
+  "drivers/win32/win32-driver.js",
+];
 const SOURCE_SIGNATURE = createSourceSignature(ROOT);
 
 const mimeTypes = {

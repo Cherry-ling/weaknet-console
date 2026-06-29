@@ -18,7 +18,7 @@ standalone backend so the existing macOS functionality keeps using its current
 
 The process runs until it is stopped. Clearing weaknet is process stop plus status cleanup.
 
-## Build on Windows
+## Build on Windows for development
 
 Install .NET 8 or newer SDK, then run:
 
@@ -36,10 +36,42 @@ Run from an elevated terminal:
 .\windows-backend\Weaknet.WinDivertShaper\bin\Release\net8.0\win-x64\publish\Weaknet.WinDivertShaper.exe run --config .\windows-backend\examples\global-3g.json --status .\status.json --pid .\weaknet.pid
 ```
 
+## Build a user package
+
+For a distributable backend that does not require end users to install .NET,
+run this on a Windows build machine:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows-backend\scripts\build-win32-package.ps1 -WinDivertDir C:\Path\To\WinDivert\x64
+```
+
+The package is written to:
+
+```text
+windows-backend\dist\win-x64
+```
+
+It contains a self-contained `Weaknet.WinDivertShaper.exe` plus
+`WinDivert.dll` and `WinDivert64.sys`. End users do not need to install .NET SDK,
+.NET Runtime, or download WinDivert manually for this backend. They still need to
+run the weaknet service as Administrator because Windows requires administrator
+permission to load the WinDivert driver.
+
+Start the Windows console service from an elevated shell, or double-click:
+
+```text
+windows-backend\scripts\open-weaknet-win32.cmd
+```
+
+The current console UI is still served by Node `server.js`; this package removes
+the separate .NET/WinDivert setup burden, not the Node-based app shell.
+
 ## Integration boundary
 
-Do not call this executable from the UI directly. Use `drivers/win32/win32-driver.js`
-from the Node service layer when the Windows UI integration is added.
+The UI calls the existing `/api/weaknet/apply`, `/api/weaknet/clear`, and
+`/api/network/status` endpoints. On macOS those endpoints still use
+`pfctl`/`dnctl`; on Windows the same endpoints route through
+`drivers/win32/win32-driver.js` and this backend.
 
 ## Guided verification
 

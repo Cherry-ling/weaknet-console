@@ -8,10 +8,13 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
+const win32Weaknet = require("./drivers/win32/win32-driver");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8123);
 const HOST = process.env.HOST || "127.0.0.1";
+const HOST_PLATFORM = process.platform;
+const IS_WIN32 = HOST_PLATFORM === "win32";
 const ADB = process.env.ADB || "adb";
 const PFCTL = process.env.PFCTL || "pfctl";
 const DNCTL = process.env.DNCTL || "dnctl";
@@ -69,6 +72,8 @@ const ANDROID_VPN_AGENT = {
   },
 };
 const ANDROID_PACKAGE_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/;
+const WIN32_RUNTIME_DIR =
+  process.env.WEAKNET_WIN32_RUNTIME_DIR || path.join(ROOT, "windows-backend", "runtime", "ui");
 
 const weaknetRuntime = {
   generation: 0,
@@ -222,11 +227,42 @@ function isRootProcess() {
   return typeof process.getuid === "function" && process.getuid() === 0;
 }
 
+async function getWindowsPrivilegeStatus() {
+  const script = [
+    "$identity = [Security.Principal.WindowsIdentity]::GetCurrent()",
+    "$principal = New-Object Security.Principal.WindowsPrincipal($identity)",
+    "$principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)",
+  ].join("; ");
+  const result = await run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], 3000);
+  const answer = String(result.stdout || "").trim();
+  if (result.ok && /^true$/i.test(answer)) {
+    return {
+      ok: true,
+      mode: "windows-admin",
+      platform: HOST_PLATFORM,
+      message: "Windows Agent 已以管理员权限运行",
+    };
+  }
+
+  return {
+    ok: false,
+    mode: "windows-missing",
+    platform: HOST_PLATFORM,
+    message: "Windows 弱网需要管理员权限。请右键使用 open-weaknet-win32.cmd，或用管理员 PowerShell 运行 node server.js。",
+    error: result.error || result.stderr || result.stdout || "current process is not elevated",
+  };
+}
+
 async function getPrivilegeStatus() {
+  if (IS_WIN32) {
+    return getWindowsPrivilegeStatus();
+  }
+
   if (isRootProcess()) {
     return {
       ok: true,
       mode: "root",
+      platform: HOST_PLATFORM,
       message: "Agent 已以管理员权限运行",
     };
   }
@@ -236,6 +272,7 @@ async function getPrivilegeStatus() {
     return {
       ok: true,
       mode: "sudo-cache",
+      platform: HOST_PLATFORM,
       message: "sudo 授权缓存有效",
     };
   }
@@ -243,6 +280,7 @@ async function getPrivilegeStatus() {
   return {
     ok: false,
     mode: "missing",
+    platform: HOST_PLATFORM,
     message: "Agent 没有管理员权限。请停止当前服务，并用 start-admin.command 或 sudo node server.js 重新启动。",
     error: result.error || result.stderr || result.stdout,
   };
@@ -608,7 +646,7 @@ async function startSocksProxy({ allowedIp, advertisedHost, port = SOCKS_PORT, f
     socksRuntime.advertisedHost === advertisedHost &&
     socksRuntime.port === port
   ) {
-    return { ok: true, reused: true, message: "Mac SOCKS 出口已运行" };
+    return { ok: true, reused: true, message: "本机 SOCKS 出口已运行" };
   }
 
   await stopSocksProxy();
@@ -642,7 +680,7 @@ async function startSocksProxy({ allowedIp, advertisedHost, port = SOCKS_PORT, f
   return {
     ok: true,
     reused: false,
-    message: `Mac SOCKS 出口已启动：${advertisedHost}:${port}`,
+    message: `本机 SOCKS 出口已启动：${advertisedHost}:${port}`,
     host: advertisedHost,
     port,
   };
@@ -1212,6 +1250,10 @@ function isMacLocalWeaknetScope(targetScope) {
   return targetScope === "mac-unity" || targetScope === "mac-global";
 }
 
+function isLocalWeaknetScope(targetScope) {
+  return isMacLocalWeaknetScope(targetScope) || targetScope === "win-global" || targetScope === "win-target";
+}
+
 function normalizeNetworkWave(sourceWave = {}) {
   return {
     enabled: Boolean(sourceWave && sourceWave.enabled),
@@ -1224,7 +1266,7 @@ function normalizeWeaknetRequest(body) {
   const presetKey = String(sourceProfile.presetKey || "custom");
   const targetScope = String(body.targetScope || sourceProfile.targetScope || "device").trim() || "device";
   const deviceIp = String(body.deviceIp || sourceProfile.deviceIp || "").trim();
-  if (!isMacLocalWeaknetScope(targetScope) && presetKey !== "normal" && !isValidIpv4(deviceIp)) {
+  if (!isLocalWeaknetScope(targetScope) && presetKey !== "normal" && !isValidIpv4(deviceIp)) {
     throw makeHttpError("invalid deviceIp; expected an IPv4 address", 400);
   }
 
@@ -1316,7 +1358,9 @@ function getAndroidVpnProfileSupport(profile) {
   return {
     supported: true,
     mode: "socks",
-    message: "Android VPN Agent 将通过 Mac SOCKS 出口和 pf/dnctl 执行该弱网预设",
+    message: IS_WIN32
+      ? "Android VPN Agent 将通过 Windows SOCKS 出口和 WinDivert 执行该弱网预设"
+      : "Android VPN Agent 将通过 Mac SOCKS 出口和 pf/dnctl 执行该弱网预设",
   };
 }
 
@@ -1475,7 +1519,7 @@ async function getAndroidVpnAgentStatus(serial) {
     packageName: ANDROID_VPN_AGENT.packageName,
     status,
     message: socksMissing
-      ? "Android VPN Agent 正在 SOCKS 模式运行，但 Mac SOCKS 出口未运行；请重新点击应用预设"
+      ? "Android VPN Agent 正在 SOCKS 模式运行，但本机 SOCKS 出口未运行；请重新点击应用预设"
       : status && status.message
         ? status.message
         : "Android VPN Agent 已安装",
@@ -1487,7 +1531,98 @@ function encodeProfileForAndroidAgent(profile, targetPackage) {
   return Buffer.from(JSON.stringify({ ...profile, targetPackage }), "utf8").toString("base64");
 }
 
+async function prepareAndroidSocksWeaknetWin32(request) {
+  const privilege = await requireWeaknetPrivilege();
+  const { deviceIp, profile } = request;
+  if (!isValidIpv4(deviceIp)) {
+    throw makeHttpError("Android VPN SOCKS 模式需要有效的设备 IP，请先刷新设备", 400);
+  }
+
+  const hostRecord = findReachableMacIpForDevice(deviceIp);
+  if (!hostRecord || !hostRecord.address) {
+    throw makeHttpError("没有找到与 Android 同网段的 Windows IP，无法启动 Windows SOCKS 出口", 400);
+  }
+
+  const socks = await startSocksProxy({
+    allowedIp: deviceIp,
+    advertisedHost: hostRecord.address,
+    port: SOCKS_PORT,
+    forceRestart: true,
+  });
+  const steps = [makeInternalStep("启动 Windows SOCKS 出口", socks.ok, (socks.message || "").replace(/^Mac /, "Windows "))];
+
+  let config = null;
+  try {
+    config = win32Weaknet.buildWin32WeaknetConfig({
+      ...request,
+      targetScope: "android-socks",
+      socksHost: hostRecord.address,
+      socksPort: SOCKS_PORT,
+    });
+    steps.push(makeWin32Step("生成 Windows SOCKS WinDivert 配置", true, `mode=${config.mode}, rules=${config.rules.length}`));
+  } catch (error) {
+    steps.push(makeWin32Step("生成 Windows SOCKS WinDivert 配置", false, error.message));
+    return buildWeaknetResponse("android-socks-win32-config", "Windows SOCKS 弱网配置生成失败", steps, {
+      privilege,
+      socks,
+      macIp: hostRecord.address,
+      socksPort: SOCKS_PORT,
+    });
+  }
+
+  try {
+    const stopResult = win32Weaknet.clearWin32Weaknet(getWin32DriverOptions());
+    steps.push(makeWin32Step("清理上一次 Windows WinDivert 后端", true, stopResult));
+  } catch (error) {
+    steps.push(makeWin32Step("清理上一次 Windows WinDivert 后端", false, error.message));
+    return buildWeaknetResponse("android-socks-win32-preflight", "Windows SOCKS 弱网下发前清理失败", steps, {
+      privilege,
+      socks,
+      macIp: hostRecord.address,
+      socksPort: SOCKS_PORT,
+    });
+  }
+
+  let startResult = null;
+  try {
+    startResult = win32Weaknet.startWin32Weaknet(
+      { ...request, targetScope: "android-socks", socksHost: hostRecord.address, socksPort: SOCKS_PORT },
+      { ...getWin32DriverOptions(), config },
+    );
+    steps.push(makeWin32Step("启动 Windows SOCKS WinDivert 后端", true, `pid=${startResult.pid}, exe=${startResult.executable}`));
+  } catch (error) {
+    steps.push(makeWin32Step("启动 Windows SOCKS WinDivert 后端", false, error.message));
+    return buildWeaknetResponse("android-socks-win32-start", "Windows SOCKS WinDivert 后端启动失败", steps, {
+      privilege,
+      socks,
+      macIp: hostRecord.address,
+      socksPort: SOCKS_PORT,
+    });
+  }
+
+  const response = buildWeaknetResponse("android-socks-win32", "Windows SOCKS 弱网链路已准备", steps, {
+    privilege,
+    socks,
+    macIp: hostRecord.address,
+    socksPort: SOCKS_PORT,
+    win32: {
+      pid: startResult.pid,
+      executable: startResult.executable,
+      configFile: startResult.configFile,
+      statusFile: startResult.statusFile,
+      pidFile: startResult.pidFile,
+      logFile: startResult.logFile,
+    },
+  });
+  if (response.ok) rememberWin32WeaknetProfile(profile, "android-socks");
+  return response;
+}
+
 async function prepareAndroidSocksWeaknet(request) {
+  if (IS_WIN32) {
+    return prepareAndroidSocksWeaknetWin32(request);
+  }
+
   const privilege = await requireWeaknetPrivilege();
   const { deviceIp, profile } = request;
   if (!isValidIpv4(deviceIp)) {
@@ -1810,6 +1945,10 @@ async function readPipeBandwidth(pipeId) {
 }
 
 async function getNetworkCurveStatus() {
+  if (IS_WIN32) {
+    return getWin32NetworkCurveStatus();
+  }
+
   const [downPipe, upPipe] = await Promise.all([readPipeBandwidth(PIPE_DOWN), readPipeBandwidth(PIPE_UP)]);
   const permissionDenied = /Operation not permitted|permission/i.test(`${downPipe.error}\n${upPipe.error}`);
   const profile = weaknetRuntime.activeProfile || {};
@@ -2200,6 +2339,178 @@ async function runClearWeaknetSteps() {
   ];
 }
 
+function getWin32DriverOptions() {
+  const options = { runtimeDir: WIN32_RUNTIME_DIR };
+  if (process.env.WEAKNET_WIN32_SHAPER) {
+    options.executable = process.env.WEAKNET_WIN32_SHAPER;
+  }
+  return options;
+}
+
+function mapWin32TargetScope(targetScope) {
+  if (targetScope === "mac-global" || targetScope === "win-global") return "win-global";
+  if (targetScope === "mac-unity" || targetScope === "win-target") return "win-target";
+  if (targetScope === "macos" || targetScope === "device" || targetScope === "win-gateway") return "win-gateway";
+  return targetScope;
+}
+
+function getWin32TargetLabel(scope) {
+  if (scope === "win-global") return "Windows 全局流量";
+  if (scope === "win-target") return "Windows 目标流量";
+  if (scope === "android-socks") return "Android SOCKS 隧道";
+  return "Windows 网关流量";
+}
+
+function makeWin32Step(label, ok, payload) {
+  const message =
+    typeof payload === "string"
+      ? payload
+      : payload && payload.message
+        ? payload.message
+        : payload && payload.error
+          ? payload.error
+          : ok
+            ? "ok"
+            : "failed";
+  return makeInternalStep(label, ok, message);
+}
+
+function resetWeaknetRuntimeState() {
+  stopWeaknetTimers();
+  weaknetRuntime.active = false;
+  weaknetRuntime.activeProfile = null;
+  weaknetRuntime.currentPipeProfile = null;
+  weaknetRuntime.activeMode = "normal";
+}
+
+function rememberWin32WeaknetProfile(profile, mode) {
+  rememberWeaknetProfile(profile, mode);
+  weaknetRuntime.blocked = profile && profile.disconnectMode === "always";
+}
+
+function getWin32ProfileDelayMs(profile) {
+  const explicitDelay = Number(profile && profile.pipeDelayMs);
+  if (Number.isFinite(explicitDelay)) return explicitDelay;
+  const latency = Number(profile && profile.latencyRttMs);
+  return Number.isFinite(latency) ? Math.round(latency / 2) : null;
+}
+
+async function clearWin32WeaknetRules(extra = {}) {
+  resetWeaknetRuntimeState();
+  const steps = [];
+  try {
+    const result = win32Weaknet.clearWin32Weaknet(getWin32DriverOptions());
+    steps.push(makeWin32Step("停止 Windows WinDivert 后端", true, result));
+    return buildWeaknetResponse("normal", "Windows 弱网规则已清理", steps, extra);
+  } catch (error) {
+    steps.push(makeWin32Step("停止 Windows WinDivert 后端", false, error.message));
+    return buildWeaknetResponse("normal", "Windows 弱网规则清理失败", steps, extra);
+  }
+}
+
+function getWin32NetworkCurveStatus() {
+  const runtimeStatus = win32Weaknet.readWin32WeaknetStatus(getWin32DriverOptions());
+  const snapshot = runtimeStatus.status || null;
+  const profile = (snapshot && snapshot.profile) || weaknetRuntime.activeProfile || {};
+  const active = Boolean(weaknetRuntime.active || (runtimeStatus.running && snapshot && snapshot.ok !== false));
+  const blocked = Boolean(active && (weaknetRuntime.blocked || profile.disconnectMode === "always"));
+  const downBandwidth = active ? bandwidthFromKbps(profile.downloadKbps) : null;
+  const upBandwidth = active ? bandwidthFromKbps(profile.uploadKbps) : null;
+  const downKbps = blocked ? 0 : downBandwidth ? downBandwidth.kbps : 0;
+  const upKbps = blocked ? 0 : upBandwidth ? upBandwidth.kbps : 0;
+  const pipeDelayMs = getWin32ProfileDelayMs(profile);
+  const packetLossPercent = Number(profile.packetLossPercent);
+  const networkWave = isNetworkWaveEnabled(profile);
+
+  return {
+    ok: true,
+    active,
+    blocked,
+    permissionDenied: false,
+    jitter: Boolean(active && ((profile.jitterMs || 0) > 0 || networkWave)),
+    networkWave: networkWave ? { enabled: true, mode: profile.networkWave.mode || NETWORK_WAVE_CONFIG.mode } : { enabled: false },
+    pipeDelayMs: active && Number.isFinite(pipeDelayMs) ? pipeDelayMs : null,
+    packetLossPercent: active && Number.isFinite(packetLossPercent) ? packetLossPercent : null,
+    mode: (snapshot && snapshot.mode) || weaknetRuntime.activeMode,
+    timestamp: Date.now(),
+    download: active && downBandwidth && !blocked ? { value: downBandwidth.value, unit: downBandwidth.unit } : null,
+    upload: active && upBandwidth && !blocked ? { value: upBandwidth.value, unit: upBandwidth.unit } : null,
+    downKbps,
+    upKbps,
+    pipes: {
+      down: { pipeId: "win32-download", ok: true, source: "win32", error: "" },
+      up: { pipeId: "win32-upload", ok: true, source: "win32", error: "" },
+    },
+    win32: runtimeStatus,
+  };
+}
+
+async function applyWin32Weaknet(body) {
+  const privilege = await requireWeaknetPrivilege();
+  const request = normalizeWeaknetRequest(body);
+  const { profile } = request;
+  const win32Scope = mapWin32TargetScope(request.targetScope);
+
+  if (profile.presetKey === "normal") {
+    return clearWin32WeaknetRules({ ...request, privilege, win32Scope });
+  }
+
+  const steps = [];
+  let config = null;
+  try {
+    config = win32Weaknet.buildWin32WeaknetConfig({ ...request, targetScope: win32Scope });
+    steps.push(makeWin32Step("生成 Windows WinDivert 配置", true, `mode=${config.mode}, rules=${config.rules.length}`));
+  } catch (error) {
+    steps.push(makeWin32Step("生成 Windows WinDivert 配置", false, error.message));
+    return buildWeaknetResponse("win32-config", "Windows WinDivert 配置生成失败", steps, {
+      ...request,
+      privilege,
+      win32Scope,
+    });
+  }
+
+  try {
+    const stopResult = win32Weaknet.clearWin32Weaknet(getWin32DriverOptions());
+    steps.push(makeWin32Step("清理上一次 Windows WinDivert 后端", true, stopResult));
+  } catch (error) {
+    steps.push(makeWin32Step("清理上一次 Windows WinDivert 后端", false, error.message));
+    return buildWeaknetResponse("win32-preflight", "Windows WinDivert 下发前清理失败", steps, {
+      ...request,
+      privilege,
+      win32Scope,
+    });
+  }
+
+  let startResult = null;
+  try {
+    startResult = win32Weaknet.startWin32Weaknet({ ...request, targetScope: win32Scope }, { ...getWin32DriverOptions(), config });
+    steps.push(makeWin32Step("启动 Windows WinDivert 后端", true, `pid=${startResult.pid}, exe=${startResult.executable}`));
+  } catch (error) {
+    steps.push(makeWin32Step("启动 Windows WinDivert 后端", false, error.message));
+    return buildWeaknetResponse("win32-start", "Windows WinDivert 后端启动失败", steps, {
+      ...request,
+      privilege,
+      win32Scope,
+    });
+  }
+
+  const response = buildWeaknetResponse(win32Scope, `${profile.displayNameZh} 已下发到 ${getWin32TargetLabel(win32Scope)}`, steps, {
+    ...request,
+    privilege,
+    win32Scope,
+    win32: {
+      pid: startResult.pid,
+      executable: startResult.executable,
+      configFile: startResult.configFile,
+      statusFile: startResult.statusFile,
+      pidFile: startResult.pidFile,
+      logFile: startResult.logFile,
+    },
+  });
+  if (response.ok) rememberWin32WeaknetProfile(profile, win32Scope);
+  return response;
+}
+
 async function installWeaknetRootAnchor() {
   try {
     return await runPrivileged("安装 pf root anchor", PFCTL, ["-f", "-"], {
@@ -2309,6 +2620,10 @@ function startWeaknetTimers(profile, deviceIp, rules = {}) {
 }
 
 async function clearWeaknetRules() {
+  if (IS_WIN32) {
+    return clearWin32WeaknetRules();
+  }
+
   const privilege = await requireWeaknetPrivilege();
   const steps = await runClearWeaknetSteps();
   return buildWeaknetResponse("normal", "弱网规则已清理", steps, { privilege });
@@ -2338,7 +2653,7 @@ async function stopService(body = {}) {
     weaknet = {
       ok: false,
       mode: "normal",
-      message: "Mac 弱网规则清理失败",
+      message: IS_WIN32 ? "Windows 弱网规则清理失败" : "Mac 弱网规则清理失败",
       error: error.message,
       steps: publicizeSteps(error.steps || []),
     };
@@ -2476,6 +2791,10 @@ async function applyMacGlobalWeaknet(request, privilege) {
 }
 
 async function applyWeaknet(body) {
+  if (IS_WIN32) {
+    return applyWin32Weaknet(body);
+  }
+
   const privilege = await requireWeaknetPrivilege();
   const request = normalizeWeaknetRequest(body);
   if (request.targetScope === "mac-unity") {
@@ -2565,7 +2884,10 @@ const server = http.createServer(async (req, res) => {
       host: HOST,
       port: PORT,
       pid: process.pid,
+      platform: HOST_PLATFORM,
+      weaknetBackend: IS_WIN32 ? "win32-windivert" : "darwin-pf-dnctl",
       runtimeRoot: process.env.WEAKNET_RUNTIME_ROOT || ROOT,
+      win32RuntimeDir: IS_WIN32 ? WIN32_RUNTIME_DIR : "",
       sourceSignature: getSourceSignature(),
     });
     return;
