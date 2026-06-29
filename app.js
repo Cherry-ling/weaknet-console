@@ -360,20 +360,58 @@ function saveHistory() {
 }
 
 function loadTheme() {
+  let savedTheme = "";
   try {
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-    return THEME_KEYS.has(savedTheme) ? savedTheme : DEFAULT_THEME;
+    savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
   } catch {
-    return DEFAULT_THEME;
+    savedTheme = "";
+  }
+
+  if (THEME_KEYS.has(savedTheme)) {
+    saveThemeCookie(savedTheme);
+    return savedTheme;
+  }
+
+  const cookieTheme = loadThemeCookie();
+  if (cookieTheme) {
+    saveThemeToLocalStorage(cookieTheme);
+    return cookieTheme;
+  }
+
+  return DEFAULT_THEME;
+}
+
+function loadThemeCookie() {
+  try {
+    const cookie = document.cookie
+      .split("; ")
+      .find((item) => item.startsWith(`${THEME_STORAGE_KEY}=`));
+    const value = cookie ? decodeURIComponent(cookie.slice(THEME_STORAGE_KEY.length + 1)) : "";
+    return THEME_KEYS.has(value) ? value : "";
+  } catch {
+    return "";
   }
 }
 
-function saveTheme(theme) {
+function saveThemeToLocalStorage(theme) {
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
     // Theme persistence is a convenience; the console should still run without storage.
   }
+}
+
+function saveThemeCookie(theme) {
+  try {
+    document.cookie = `${THEME_STORAGE_KEY}=${encodeURIComponent(theme)}; Max-Age=31536000; Path=/; SameSite=Lax`;
+  } catch {
+    // Cookie persistence lets the launcher page share the theme across local ports.
+  }
+}
+
+function saveTheme(theme) {
+  saveThemeToLocalStorage(theme);
+  saveThemeCookie(theme);
 }
 
 function getThemeMeta(theme) {
