@@ -1,0 +1,40 @@
+{
+  "mode": "win-global",
+  "profile": {
+    "presetKey": "3g",
+    "displayNameZh": "Windows 3G",
+    "latencyRttMs": 300,
+    "jitterMs": 80,
+    "packetLossPercent": 3,
+    "downloadKbps": 400,
+    "uploadKbps": 100,
+    "disconnectMode": "none",
+    "disconnectDurationSec": 0,
+    "disconnectIntervalSec": 0,
+    "networkWave": {
+      "enabled": false,
+      "mode": "subway-elevator"
+    }
+  },
+  "statusIntervalMs": 1000,
+  "queue": {
+    "maxPacketSize": 65535,
+    "winDivertQueueLength": 8192,
+    "winDivertQueueSizeBytes": 33554432,
+    "winDivertQueueTimeMs": 16000
+  },
+  "rules": [
+    {
+      "name": "win-global-upload",
+      "direction": "upload",
+      "layer": "network",
+      "filter": "outbound and !loopback and (ip or ipv6)"
+    },
+    {
+      "name": "win-global-download",
+      "direction": "download",
+      "layer": "network",
+      "filter": "inbound and !loopback and (ip or ipv6)"
+    }
+  ]
+}
