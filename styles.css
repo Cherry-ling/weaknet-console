@@ -3184,6 +3184,7 @@ body.console-layout .app-shell {
 }
 
 body.console-layout .topbar {
+  position: relative;
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr) 160px;
   align-items: center;
@@ -3227,7 +3228,30 @@ body.console-layout .brand-block {
 }
 
 body.console-layout .brand-meta {
-  display: none;
+  position: absolute;
+  top: 50%;
+  left: 116px;
+  z-index: 2;
+  display: flex;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+body.console-layout .theme-switch {
+  min-height: 28px;
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+body.console-layout .theme-option,
+body.console-layout .theme-step {
+  min-height: 22px;
+}
+
+body.console-layout .theme-option.active {
+  background: rgba(238, 243, 245, 0.94);
+  color: #11191e;
+  box-shadow: none;
 }
 
 body.console-layout .topbar h1 {
@@ -4112,6 +4136,352 @@ body.console-layout .gateway-dialog-actions .secondary-button {
   color: #edf6f8;
 }
 
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) {
+  --bg: #030b0c;
+  --surface: #0c1719;
+  --surface-muted: #071113;
+  --text: #eafffb;
+  --text-muted: #91b4b3;
+  --line: rgba(91, 236, 220, 0.18);
+  --accent: #45e6d0;
+  --accent-strong: #15bfae;
+  --warning: #ffc36b;
+  --danger: #ff766d;
+  --ok: #73f58b;
+  --ink: #eafffb;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(69, 230, 208, 0.16), transparent 26%),
+    radial-gradient(circle at 82% 12%, rgba(115, 245, 139, 0.1), transparent 24%),
+    linear-gradient(180deg, #071414 0%, #031011 56%, #020707 100%);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .app-shell {
+  border-color: rgba(91, 236, 220, 0.24);
+  background:
+    linear-gradient(180deg, rgba(9, 23, 25, 0.98), rgba(4, 12, 13, 0.99)),
+    var(--bg);
+  box-shadow:
+    0 28px 76px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(155, 255, 238, 0.08);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .topbar,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .console-statusbar,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .bottom-actionbar {
+  border-color: var(--line);
+  background:
+    linear-gradient(90deg, rgba(69, 230, 208, 0.06), transparent 42%),
+    rgba(4, 14, 15, 0.94);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-column,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .config-column,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .status-column {
+  background: rgba(2, 10, 11, 0.54);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .config-column > .panel,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .status-column > .panel,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .preset-card,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .metric,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .device-field,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .advanced-editor label,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .device-mode-summary,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .gateway-scope,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .selected-summary,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .network-wave-row,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .operation-step,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .operation-log-row,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .history-item {
+  border-color: var(--line);
+  background: rgba(9, 25, 27, 0.78);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option:hover,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option:focus-visible {
+  border-color: rgba(69, 230, 208, 0.62);
+  background: rgba(15, 45, 47, 0.84);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option.active,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .preset-card.active {
+  border-color: rgba(115, 245, 139, 0.86);
+  background:
+    linear-gradient(135deg, rgba(69, 230, 208, 0.23), rgba(115, 245, 139, 0.08)),
+    rgba(7, 31, 25, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(115, 245, 139, 0.14);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .theme-option.active,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .segment.active,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .monitor-tab.active {
+  background: rgba(69, 230, 208, 0.92);
+  color: #031112;
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .current-effect-strip.status-ok {
+  border-color: rgba(115, 245, 139, 0.4);
+  background: rgba(115, 245, 139, 0.08);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .current-effect-strip.status-warn {
+  border-color: rgba(255, 195, 107, 0.42);
+  background: rgba(255, 195, 107, 0.1);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .current-effect-strip.status-error {
+  border-color: rgba(255, 118, 109, 0.42);
+  background: rgba(255, 118, 109, 0.1);
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .network-chart-wrap,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .chart-wrap,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .operation-card {
+  border-color: rgba(91, 236, 220, 0.18);
+  background:
+    linear-gradient(180deg, rgba(9, 21, 24, 0.96), rgba(3, 11, 13, 0.98)),
+    #061012;
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .bottom-actionbar .primary-button {
+  border-color: rgba(115, 245, 139, 0.54);
+  background: linear-gradient(180deg, rgba(38, 147, 88, 0.78), rgba(13, 103, 69, 0.84));
+  color: #effff5;
+}
+
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .bottom-actionbar .secondary-button,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .service-stop-button {
+  border-color: rgba(255, 118, 109, 0.34);
+  background: rgba(255, 118, 109, 0.08);
+  color: #ffaaa3;
+}
+
+body.console-layout.theme-classic {
+  color-scheme: light;
+  --bg: #eef4f7;
+  --surface: #ffffff;
+  --surface-muted: #f4f8fb;
+  --text: #14212a;
+  --text-muted: #607380;
+  --line: rgba(84, 109, 122, 0.22);
+  --accent: #087f8c;
+  --accent-strong: #066b76;
+  --warning: #9b5a00;
+  --danger: #b42318;
+  --ok: #087443;
+  --ink: #14212a;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(8, 127, 140, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 16%, rgba(47, 107, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #f5fafc 0%, #e9f1f4 100%);
+}
+
+body.console-layout.theme-classic .app-shell {
+  border-color: rgba(86, 108, 120, 0.3);
+  background: #fbfdfe;
+  box-shadow:
+    0 24px 64px rgba(42, 63, 76, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+body.console-layout.theme-classic .topbar,
+body.console-layout.theme-classic .console-statusbar,
+body.console-layout.theme-classic .bottom-actionbar {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 251, 0.94)),
+    #ffffff;
+}
+
+body.console-layout.theme-classic .mode-column,
+body.console-layout.theme-classic .config-column,
+body.console-layout.theme-classic .status-column {
+  background: #eef4f7;
+}
+
+body.console-layout.theme-classic .config-column > .panel,
+body.console-layout.theme-classic .status-column > .panel,
+body.console-layout.theme-classic .mode-card-option,
+body.console-layout.theme-classic .preset-card,
+body.console-layout.theme-classic .metric,
+body.console-layout.theme-classic .device-field,
+body.console-layout.theme-classic .advanced-editor label,
+body.console-layout.theme-classic .device-mode-summary,
+body.console-layout.theme-classic .gateway-scope,
+body.console-layout.theme-classic .selected-summary,
+body.console-layout.theme-classic .network-wave-row,
+body.console-layout.theme-classic .history-item {
+  border-color: var(--line);
+  background: #ffffff;
+}
+
+body.console-layout.theme-classic .mode-card-option:hover,
+body.console-layout.theme-classic .mode-card-option:focus-visible {
+  border-color: rgba(8, 127, 140, 0.48);
+  background: #f4fbfc;
+}
+
+body.console-layout.theme-classic .mode-card-option.active,
+body.console-layout.theme-classic .preset-card.active {
+  border-color: rgba(8, 127, 140, 0.78);
+  background:
+    linear-gradient(135deg, rgba(8, 127, 140, 0.14), rgba(47, 107, 255, 0.055)),
+    #f7fcfd;
+  box-shadow: inset 0 0 0 1px rgba(8, 127, 140, 0.1);
+}
+
+body.console-layout.theme-classic .theme-switch,
+body.console-layout.theme-classic .segmented-control,
+body.console-layout.theme-classic .monitor-tabs,
+body.console-layout.theme-classic .icon-button,
+body.console-layout.theme-classic .live-dot,
+body.console-layout.theme-classic .status-pill,
+body.console-layout.theme-classic .console-device-icon,
+body.console-layout.theme-classic .mode-card-icon,
+body.console-layout.theme-classic .chip {
+  border-color: var(--line);
+  background: #f2f7fa;
+}
+
+body.console-layout.theme-classic .theme-option.active,
+body.console-layout.theme-classic .segment.active,
+body.console-layout.theme-classic .monitor-tab.active {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+body.console-layout.theme-classic .device-field input,
+body.console-layout.theme-classic .device-field select,
+body.console-layout.theme-classic .advanced-editor input,
+body.console-layout.theme-classic .gateway-search input {
+  border-color: rgba(84, 109, 122, 0.22);
+  background: #ffffff;
+  color: var(--text);
+}
+
+body.console-layout.theme-classic .current-effect-strip.status-ok {
+  border-color: rgba(8, 116, 67, 0.26);
+  background: rgba(8, 116, 67, 0.07);
+}
+
+body.console-layout.theme-classic .current-effect-strip.status-warn {
+  border-color: rgba(155, 90, 0, 0.28);
+  background: rgba(155, 90, 0, 0.08);
+}
+
+body.console-layout.theme-classic .current-effect-strip.status-error {
+  border-color: rgba(180, 35, 24, 0.28);
+  background: rgba(180, 35, 24, 0.08);
+}
+
+body.console-layout.theme-classic .current-effect-strip.status-info {
+  border-color: rgba(8, 127, 140, 0.26);
+  background: rgba(8, 127, 140, 0.07);
+}
+
+body.console-layout.theme-classic .network-chart-wrap,
+body.console-layout.theme-classic .chart-wrap,
+body.console-layout.theme-classic .operation-card {
+  border-color: rgba(84, 109, 122, 0.2);
+  background:
+    linear-gradient(180deg, rgba(19, 30, 36, 0.98), rgba(9, 16, 20, 0.98)),
+    #0f171d;
+}
+
+body.console-layout.theme-classic .operation-summary strong,
+body.console-layout.theme-classic .operation-card strong,
+body.console-layout.theme-classic .history-item-title {
+  color: #eef7fa;
+}
+
+body.console-layout.theme-classic .operation-summary span,
+body.console-layout.theme-classic .operation-log-empty,
+body.console-layout.theme-classic .operation-card .history-item span,
+body.console-layout.theme-classic .operation-card .history-item dd {
+  color: #aebfc8;
+}
+
+body.console-layout.theme-classic .operation-step,
+body.console-layout.theme-classic .operation-log-row,
+body.console-layout.theme-classic .operation-card .history-item {
+  border-color: rgba(211, 228, 235, 0.18);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+body.console-layout.theme-classic .bottom-actionbar .primary-button {
+  border-color: rgba(8, 116, 67, 0.28);
+  background: linear-gradient(180deg, #197344, #0f5f36);
+  color: #f5fff8;
+}
+
+body.console-layout.theme-classic .bottom-actionbar .secondary-button,
+body.console-layout.theme-classic .service-stop-button {
+  border-color: rgba(180, 35, 24, 0.26);
+  background: rgba(180, 35, 24, 0.06);
+  color: #b42318;
+}
+
+body.console-layout.theme-classic .launcher-backdrop,
+body.console-layout.theme-classic .gateway-dialog-backdrop {
+  background: rgba(236, 244, 247, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+body.console-layout.theme-classic .launcher-card,
+body.console-layout.theme-classic .gateway-dialog {
+  border-color: rgba(86, 108, 120, 0.34);
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: 0 28px 80px rgba(42, 63, 76, 0.22);
+}
+
+body.console-layout.theme-classic .launcher-card h2,
+body.console-layout.theme-classic .gateway-dialog h2,
+body.console-layout.theme-classic .gateway-scope h3 {
+  color: var(--text);
+}
+
+body.console-layout.theme-classic .launcher-copy,
+body.console-layout.theme-classic .launcher-note,
+body.console-layout.theme-classic .gateway-dialog p,
+body.console-layout.theme-classic .gateway-scope p {
+  color: var(--text-muted);
+}
+
+body.console-layout.theme-classic .gateway-chip,
+body.console-layout.theme-classic .gateway-more,
+body.console-layout.theme-classic .gateway-inline-list,
+body.console-layout.theme-classic .gateway-inline-row b,
+body.console-layout.theme-classic .gateway-search,
+body.console-layout.theme-classic .gateway-close-button,
+body.console-layout.theme-classic .gateway-dialog-actions .secondary-button {
+  border-color: var(--line);
+  background: #f4f8fb;
+  color: var(--text-muted);
+}
+
+body.console-layout.theme-classic .gateway-table {
+  border-color: var(--line);
+  background: #ffffff;
+}
+
+body.console-layout.theme-classic .gateway-table-head {
+  background: #edf4f7;
+  color: var(--text-muted);
+}
+
+body.console-layout.theme-classic .gateway-table-row {
+  border-top-color: var(--line);
+  background: #ffffff;
+  color: var(--text);
+}
+
+body.console-layout.theme-classic .gateway-table-row span,
+body.console-layout.theme-classic .gateway-inline-row span {
+  color: var(--text);
+}
+
 @media (max-width: 1280px) {
   body.console-layout .workspace {
     grid-template-columns: 280px minmax(440px, 1fr) 390px;
@@ -4128,6 +4498,14 @@ body.console-layout .gateway-dialog-actions .secondary-button {
     background: #0b1014;
   }
 
+  body.console-layout.theme-cyber:not(.theme-terminal-aurora) {
+    background: #030b0c;
+  }
+
+  body.console-layout.theme-classic {
+    background: #eef4f7;
+  }
+
   body.console-layout .app-shell {
     display: block;
     width: 100%;
@@ -4141,6 +4519,10 @@ body.console-layout .gateway-dialog-actions .secondary-button {
 
   body.console-layout .topbar {
     grid-template-columns: 88px minmax(0, 1fr) auto;
+  }
+
+  body.console-layout .brand-meta {
+    left: 92px;
   }
 
   body.console-layout .workspace {
@@ -4171,6 +4553,18 @@ body.console-layout .gateway-dialog-actions .secondary-button {
     height: auto;
     min-height: 58px;
     padding: 12px 14px;
+  }
+
+  body.console-layout .brand-meta {
+    left: 76px;
+  }
+
+  body.console-layout .brand-meta .eyebrow {
+    display: none;
+  }
+
+  body.console-layout .theme-switch {
+    grid-template-columns: 20px minmax(58px, auto) 20px;
   }
 
   body.console-layout .topbar-actions {

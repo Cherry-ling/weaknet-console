@@ -52,6 +52,8 @@ const NETWORK_WAVE_CONFIG = {
   intervalMaxMs: 2000,
 };
 const MAC_UNITY_TARGETS_FILE = path.join(ROOT, "mac-unity-targets.json");
+const THEME_PREF_FILE = process.env.WEAKNET_THEME_PREF_FILE || path.join(os.homedir(), ".weaknet-console-theme.json");
+const THEME_KEYS = new Set(["terminal-aurora", "cyber", "classic"]);
 const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const ANDROID_VPN_AGENT = {
   packageName: "com.weaknet.agent",
@@ -133,6 +135,26 @@ function sendJson(res, payload, statusCode = 200) {
   setCommonHeaders(res);
   res.writeHead(statusCode);
   res.end(JSON.stringify(payload));
+}
+
+function normalizeTheme(theme) {
+  return THEME_KEYS.has(theme) ? theme : "";
+}
+
+function readThemePreference() {
+  try {
+    const data = JSON.parse(fs.readFileSync(THEME_PREF_FILE, "utf8"));
+    return normalizeTheme(data.theme);
+  } catch {
+    return "";
+  }
+}
+
+function writeThemePreference(theme) {
+  const nextTheme = normalizeTheme(theme);
+  if (!nextTheme) return "";
+  fs.writeFileSync(THEME_PREF_FILE, JSON.stringify({ theme: nextTheme }, null, 2));
+  return nextTheme;
 }
 
 function run(command, args, timeoutMs = 5000) {
@@ -2546,6 +2568,28 @@ const server = http.createServer(async (req, res) => {
       runtimeRoot: process.env.WEAKNET_RUNTIME_ROOT || ROOT,
       sourceSignature: getSourceSignature(),
     });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/theme") {
+    if (req.method === "GET") {
+      sendJson(res, { ok: true, theme: readThemePreference() });
+      return;
+    }
+    if (req.method !== "POST") {
+      sendJson(res, { ok: false, error: "method not allowed" }, 405);
+      return;
+    }
+    try {
+      const theme = writeThemePreference((await readJsonBody(req)).theme);
+      if (!theme) {
+        sendJson(res, { ok: false, error: "invalid theme" }, 400);
+        return;
+      }
+      sendJson(res, { ok: true, theme });
+    } catch (error) {
+      sendJson(res, { ok: false, error: error.message }, 500);
+    }
     return;
   }
 

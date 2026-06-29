@@ -15,6 +15,8 @@ const NODE_BIN = process.env.NODE_BIN || process.execPath;
 const AGENT_LOG = process.env.AGENT_LOG || "/tmp/weaknet-console-agent.log";
 const SERVER_JS = path.join(ROOT, "server.js");
 const RUNTIME_PREFIX = path.join(os.tmpdir(), "weaknet-console-agent-");
+const THEME_PREF_FILE = process.env.WEAKNET_THEME_PREF_FILE || path.join(os.homedir(), ".weaknet-console-theme.json");
+const THEME_KEYS = new Set(["terminal-aurora", "cyber", "classic"]);
 const RUNTIME_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json", "android-agent"];
 const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const SOURCE_SIGNATURE = createSourceSignature(ROOT);
@@ -42,6 +44,52 @@ function sendJson(res, payload, statusCode = 200) {
   setCommonHeaders(res);
   res.writeHead(statusCode);
   res.end(JSON.stringify(payload));
+}
+
+function normalizeTheme(theme) {
+  return THEME_KEYS.has(theme) ? theme : "";
+}
+
+function readThemePreference() {
+  try {
+    const data = JSON.parse(fs.readFileSync(THEME_PREF_FILE, "utf8"));
+    return normalizeTheme(data.theme);
+  } catch {
+    return "";
+  }
+}
+
+function writeThemePreference(theme) {
+  const nextTheme = normalizeTheme(theme);
+  if (!nextTheme) return "";
+  fs.writeFileSync(THEME_PREF_FILE, JSON.stringify({ theme: nextTheme }, null, 2));
+  return nextTheme;
+}
+
+function readJsonBody(req, maxBytes = 1024 * 8) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) {
+        reject(new Error("request body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error("invalid JSON body"));
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 function run(command, args, timeoutMs = 5000) {
@@ -327,6 +375,28 @@ const server = http.createServer(async (req, res) => {
     setCommonHeaders(res);
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/theme") {
+    if (req.method === "GET") {
+      sendJson(res, { ok: true, theme: readThemePreference() });
+      return;
+    }
+    if (req.method !== "POST") {
+      sendJson(res, { ok: false, error: "method not allowed" }, 405);
+      return;
+    }
+    try {
+      const theme = writeThemePreference((await readJsonBody(req)).theme);
+      if (!theme) {
+        sendJson(res, { ok: false, error: "invalid theme" }, 400);
+        return;
+      }
+      sendJson(res, { ok: true, theme });
+    } catch (error) {
+      sendJson(res, { ok: false, error: error.message }, 500);
+    }
     return;
   }
 

@@ -416,6 +416,40 @@ function saveThemeCookie(theme) {
 function saveTheme(theme) {
   saveThemeToLocalStorage(theme);
   saveThemeCookie(theme);
+  saveThemeToServer(theme);
+}
+
+async function loadThemeFromServer() {
+  try {
+    const response = await fetch("/api/theme", { cache: "no-store" });
+    if (!response.ok) return "";
+    const data = await response.json();
+    return THEME_KEYS.has(data.theme) ? data.theme : "";
+  } catch {
+    return "";
+  }
+}
+
+function saveThemeToServer(theme) {
+  if (!THEME_KEYS.has(theme)) return;
+  try {
+    fetch("/api/theme", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // The browser-level fallback above is still enough for static/local previews.
+  }
+}
+
+async function hydrateThemePreference() {
+  const serverTheme = await loadThemeFromServer();
+  if (!serverTheme) return;
+  state.theme = serverTheme;
+  saveThemeToLocalStorage(serverTheme);
+  saveThemeCookie(serverTheme);
 }
 
 function getThemeMeta(theme) {
@@ -4093,6 +4127,7 @@ function bindEvents() {
 }
 
 async function initApp() {
+  await hydrateThemePreference();
   setTheme(state.theme);
   bindEvents();
   setMonitorTab("network");
