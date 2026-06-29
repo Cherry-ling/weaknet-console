@@ -317,7 +317,11 @@ const elements = {
   modeTriggerTip: document.getElementById("modeTriggerTip"),
   modeTriggerTipBubble: document.getElementById("modeTriggerTipBubble"),
   modeList: document.getElementById("modeList"),
+  modeCardList: document.getElementById("modeCardList"),
   runtimeMode: document.getElementById("runtimeMode"),
+  topCurrentSummary: document.getElementById("topCurrentSummary"),
+  bottomActionMode: document.getElementById("bottomActionMode"),
+  bottomActionTarget: document.getElementById("bottomActionTarget"),
   commandEyebrow: document.getElementById("commandEyebrow"),
   operationCard: document.getElementById("operationCard"),
   operationToneDot: document.getElementById("operationToneDot"),
@@ -873,6 +877,22 @@ function getNetworkModeLabel() {
   return "macOS 网关";
 }
 
+function getActionTargetLabel() {
+  if (isMacGlobalMode()) return "整台 Mac 外网流量";
+  if (isMacUnityMode()) return elements.targetApp.value.trim() || "Unity / CDN / SDK 目标";
+  if (isAndroidVpnMode()) return elements.targetApp.value.trim() || "未填写目标包名";
+  return elements.deviceIp.value.trim() || "未填写设备 IP";
+}
+
+function renderConsoleSummaries() {
+  const profile = getProfileForApply();
+  const profileName = profile.presetKey === "normal" ? "正常网络" : profile.displayNameZh;
+  const summary = `${getNetworkModeLabel()} / ${profileName}`;
+  if (elements.topCurrentSummary) elements.topCurrentSummary.textContent = summary;
+  if (elements.bottomActionMode) elements.bottomActionMode.textContent = summary;
+  if (elements.bottomActionTarget) elements.bottomActionTarget.textContent = getActionTargetLabel();
+}
+
 function setHidden(element, hidden) {
   if (element) element.hidden = hidden;
 }
@@ -1341,15 +1361,23 @@ function updateDeviceActionLayout() {
 }
 
 function updateModeListUi() {
-  if (!elements.modeList) return;
   const mode = getNetworkMode();
   let activeOption = null;
-  elements.modeList.querySelectorAll("[data-mode]").forEach((button) => {
-    const active = button.dataset.mode === mode;
-    if (active) activeOption = button;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-checked", active ? "true" : "false");
-  });
+  if (elements.modeList) {
+    elements.modeList.querySelectorAll("[data-mode]").forEach((button) => {
+      const active = button.dataset.mode === mode;
+      if (active) activeOption = button;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-checked", active ? "true" : "false");
+    });
+  }
+  if (elements.modeCardList) {
+    elements.modeCardList.querySelectorAll("[data-mode]").forEach((button) => {
+      const active = button.dataset.mode === mode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
   if (activeOption && elements.modeTriggerLabel) {
     elements.modeTriggerLabel.textContent = activeOption.querySelector(".mode-name")?.textContent || getNetworkModeLabel();
   }
@@ -1450,6 +1478,7 @@ function updateNetworkModeUi() {
   }
   renderDeviceModeSummary();
   renderGatewayScope();
+  renderConsoleSummaries();
 }
 
 function renderDeviceModeNote() {
@@ -1743,7 +1772,7 @@ function applySelectedDeviceToForm() {
 async function refreshDevices() {
   if (!isLikelyLocalAgent()) {
     elements.deviceNote.textContent = "本地 Agent 未连接。请运行 open-weaknet.command 后访问 http://localhost:8123。";
-    elements.monitorStatus.textContent = "未采集";
+    setMonitorStatusText("未采集");
     renderPerformanceStatus();
     return;
   }
@@ -1756,7 +1785,7 @@ async function refreshDevices() {
     state.agent.devices = (data.devices || []).filter((device) => device.state === "device");
     await refreshAdminStatus();
     renderDeviceOptions();
-    elements.monitorStatus.textContent = state.agent.devices.length ? "真机就绪" : "未发现设备";
+    setMonitorStatusText(state.agent.devices.length ? "真机就绪" : "未发现设备");
     if (!state.agent.devices.length) {
       elements.deviceNote.textContent = data.error || "未发现已授权的 Android 设备。";
     } else if (isAndroidVpnMode()) {
@@ -1766,7 +1795,7 @@ async function refreshDevices() {
     state.agent.available = false;
     elements.deviceStatus.textContent = "未连接";
     elements.deviceNote.textContent = `Agent 未连接：${error.message}`;
-    elements.monitorStatus.textContent = "未采集";
+    setMonitorStatusText("未采集");
   } finally {
     renderPerformanceStatus();
     if (isMacLocalMode()) {
@@ -2043,7 +2072,12 @@ function renderPerformanceStatus() {
   if (elements.performanceStatusMessage) elements.performanceStatusMessage.textContent = meta.message;
 }
 
+function setMonitorStatusText(text) {
+  if (elements.monitorStatus) elements.monitorStatus.textContent = text;
+}
+
 function renderPerformance() {
+  if (!elements.performanceGrid && !elements.performanceChart && !elements.performanceStatusDetail) return;
   const latest = getLatestPerformanceSample();
   const isReal = latest && latest.source === "adb";
   const errors = isReal && Array.isArray(latest.errors) ? latest.errors : [];
@@ -2077,17 +2111,19 @@ function renderPerformance() {
     ["RTT", rttValue, "网络往返", !latest || (isReal && (latest.rtt === null || latest.rtt === undefined))],
   ];
 
-  elements.performanceGrid.innerHTML = metrics
-    .map(
-      ([label, value, hint, muted]) => `
-        <div class="metric perf-metric${label === "网络" ? " network-metric" : ""}${muted ? " is-muted" : ""}">
-          <span>${label}</span>
-          <strong>${value}</strong>
-          <small>${hint}</small>
-        </div>
-      `,
-    )
-    .join("");
+  if (elements.performanceGrid) {
+    elements.performanceGrid.innerHTML = metrics
+      .map(
+        ([label, value, hint, muted]) => `
+          <div class="metric perf-metric${label === "网络" ? " network-metric" : ""}${muted ? " is-muted" : ""}">
+            <span>${label}</span>
+            <strong>${value}</strong>
+            <small>${hint}</small>
+          </div>
+        `,
+      )
+      .join("");
+  }
 
   renderPerformanceStatus();
   drawPerformanceChart();
@@ -2688,23 +2724,22 @@ function stopNetworkCurve() {
   state.networkCurve.timerId = null;
 }
 
-function setMonitorTab(tab) {
-  state.monitorTab = tab;
-  const isNetwork = tab === "network";
-  elements.monitorTitle.textContent = isNetwork ? "实时网络曲线" : "性能监控";
-  elements.networkCurveTab.classList.toggle("active", isNetwork);
-  elements.performanceTab.classList.toggle("active", !isNetwork);
-  elements.networkCurveTab.setAttribute("aria-selected", isNetwork ? "true" : "false");
-  elements.performanceTab.setAttribute("aria-selected", isNetwork ? "false" : "true");
-  elements.networkCurvePanel.hidden = !isNetwork;
-  elements.performancePanel.hidden = isNetwork;
-  elements.networkCurveStatus.hidden = !isNetwork;
-  elements.monitorStatus.hidden = isNetwork;
-  if (isNetwork) drawNetworkCurveChart();
-  else {
-    renderPerformanceStatus();
-    renderPerformance();
+function setMonitorTab() {
+  state.monitorTab = "network";
+  if (elements.monitorTitle) elements.monitorTitle.textContent = "实时网络曲线";
+  if (elements.networkCurveTab) {
+    elements.networkCurveTab.classList.add("active");
+    elements.networkCurveTab.setAttribute("aria-selected", "true");
   }
+  if (elements.performanceTab) {
+    elements.performanceTab.classList.remove("active");
+    elements.performanceTab.setAttribute("aria-selected", "false");
+  }
+  if (elements.networkCurvePanel) elements.networkCurvePanel.hidden = false;
+  if (elements.performancePanel) elements.performancePanel.hidden = true;
+  if (elements.networkCurveStatus) elements.networkCurveStatus.hidden = false;
+  if (elements.monitorStatus) elements.monitorStatus.hidden = true;
+  drawNetworkCurveChart();
 }
 
 function startMonitoring() {
@@ -2719,7 +2754,7 @@ function startMonitoring() {
 
   state.performance.running = false;
   state.agent.metricsSource = "none";
-  elements.monitorStatus.textContent = "未采集";
+  setMonitorStatusText("未采集");
   elements.deviceNote.textContent = "性能监控需要本地 Agent 和已授权 Android 设备。";
   showToast(elements.deviceNote.textContent, "error", { duration: 6200 });
   renderPerformanceStatus();
@@ -2729,7 +2764,7 @@ function startRealMonitoring() {
   const serial = state.agent.selectedSerial;
   const packageName = elements.targetApp.value.trim();
   if (!packageName) {
-    elements.monitorStatus.textContent = "缺少包名";
+    setMonitorStatusText("缺少包名");
     elements.deviceNote.textContent = "请填写目标游戏包名，或先点击“读取前台应用”。";
     renderPerformanceStatus();
     return;
@@ -2743,7 +2778,7 @@ function startRealMonitoring() {
   state.performance.samples = [];
   resetPerformanceChartDomains();
   state.performance.lastRealSample = null;
-  elements.monitorStatus.textContent = "真机监控中";
+  setMonitorStatusText("真机监控中");
   elements.deviceNote.textContent = `正在采集 ${packageName}，请确认游戏已在手机上运行。`;
   renderPerformanceStatus();
 
@@ -2771,7 +2806,7 @@ function startRealMonitoring() {
 
   eventSource.onerror = () => {
     state.performance.streamError = true;
-    elements.monitorStatus.textContent = "采集异常";
+    setMonitorStatusText("采集异常");
     elements.deviceNote.textContent = "真机指标流断开，请刷新设备或重启 Agent。";
     renderPerformanceStatus();
   };
@@ -2785,7 +2820,7 @@ function restartRealMonitoringIfRunning() {
 function stopMonitoring() {
   state.performance.running = false;
   state.performance.paused = true;
-  elements.monitorStatus.textContent = "已暂停";
+  setMonitorStatusText("已暂停");
   window.clearInterval(state.performance.timerId);
   state.performance.timerId = null;
   if (state.performance.eventSource) {
@@ -2844,6 +2879,7 @@ function renderSummary() {
       `,
     )
     .join("");
+  renderConsoleSummaries();
 }
 
 function getDisconnectLabel(profile) {
@@ -3918,6 +3954,7 @@ function bindEvents() {
   [elements.deviceIp, elements.platform, elements.targetApp, elements.networkMode].forEach((input) => {
     input.addEventListener("input", () => {
       renderCommandPreview();
+      renderConsoleSummaries();
       if (input === elements.targetApp) {
         renderDeviceModeSummary();
         renderGatewayScope();
@@ -3925,6 +3962,7 @@ function bindEvents() {
     });
     input.addEventListener("change", () => {
       renderCommandPreview();
+      renderConsoleSummaries();
       if (input === elements.targetApp) {
         renderDeviceModeSummary();
         renderGatewayScope();
@@ -3947,6 +3985,14 @@ function bindEvents() {
       await refreshAdminStatus();
     }
   });
+
+  if (elements.modeCardList) {
+    elements.modeCardList.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-mode]");
+      if (!option) return;
+      setNetworkMode(option.dataset.mode);
+    });
+  }
 
   if (elements.modeTrigger && elements.modeList) {
     elements.modeTrigger.addEventListener("click", (event) => {
@@ -4002,14 +4048,14 @@ function bindEvents() {
   elements.foregroundButton.addEventListener("click", readForegroundApp);
   elements.installVpnButton.addEventListener("click", installAndroidVpnAgentFromUi);
   elements.authorizeVpnButton.addEventListener("click", authorizeAndroidVpnFromUi);
-  elements.networkCurveTab.addEventListener("click", () => setMonitorTab("network"));
-  elements.performanceTab.addEventListener("click", () => setMonitorTab("performance"));
+  if (elements.networkCurveTab) elements.networkCurveTab.addEventListener("click", () => setMonitorTab());
+  if (elements.performanceTab) elements.performanceTab.addEventListener("click", () => setMonitorTab());
   elements.applyButton.addEventListener("click", applyProfile);
   elements.clearButton.addEventListener("click", clearWeakNet);
   elements.resetButton.addEventListener("click", clearWeakNet);
   if (elements.stopServiceButton) elements.stopServiceButton.addEventListener("click", stopService);
-  elements.startMonitorButton.addEventListener("click", startMonitoring);
-  elements.stopMonitorButton.addEventListener("click", stopMonitoring);
+  if (elements.startMonitorButton) elements.startMonitorButton.addEventListener("click", startMonitoring);
+  if (elements.stopMonitorButton) elements.stopMonitorButton.addEventListener("click", stopMonitoring);
   elements.clearHistoryButton.addEventListener("click", clearHistory);
 
   elements.gatewayToggleButton.addEventListener("click", () => {

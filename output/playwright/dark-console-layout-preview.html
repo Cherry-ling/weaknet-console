@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>弱网控制台暗色工具台预览</title>
+    <style>
+      :root {
+        --bg: #0c1012;
+        --panel: #12181c;
+        --panel-2: #151c21;
+        --line: rgba(207, 226, 232, 0.14);
+        --line-strong: rgba(207, 226, 232, 0.24);
+        --text: #eff6f7;
+        --muted: #9ba9af;
+        --muted-2: #6f7d84;
+        --green: #61d87d;
+        --green-soft: rgba(97, 216, 125, 0.16);
+        --blue: #5e93ff;
+        --cyan: #23b5c3;
+        --red: #ff7868;
+        --amber: #f1b84a;
+        --shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 18% 10%, rgba(75, 104, 103, 0.34), transparent 28%),
+          radial-gradient(circle at 84% 78%, rgba(52, 72, 86, 0.32), transparent 34%),
+          linear-gradient(135deg, #212527, #5e6060 52%, #292c2e);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .window {
+        width: min(1500px, calc(100vw - 48px));
+        height: min(920px, calc(100vh - 48px));
+        min-height: 780px;
+        overflow: hidden;
+        border: 1px solid rgba(232, 244, 247, 0.18);
+        border-radius: 10px;
+        background: linear-gradient(180deg, #11171b 0%, #0d1215 100%);
+        box-shadow: var(--shadow);
+      }
+
+      .titlebar {
+        height: 54px;
+        display: grid;
+        grid-template-columns: 160px 1fr 160px;
+        align-items: center;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(25, 31, 35, 0.96), rgba(13, 18, 21, 0.96));
+      }
+
+      .traffic {
+        display: inline-flex;
+        gap: 10px;
+      }
+
+      .traffic i {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+      }
+
+      .traffic i:nth-child(1) {
+        background: #ff685f;
+      }
+
+      .traffic i:nth-child(2) {
+        background: #f7c95a;
+      }
+
+      .traffic i:nth-child(3) {
+        background: #60d076;
+      }
+
+      .titlebar h1 {
+        margin: 0;
+        text-align: center;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .toolbar {
+        height: 56px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 18px;
+        padding: 0 28px 0 38px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(14, 19, 22, 0.86);
+      }
+
+      .toolbar-left,
+      .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 12px currentColor;
+      }
+
+      .status-line {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--muted);
+        font-size: 15px;
+        font-weight: 650;
+      }
+
+      .status-line strong {
+        color: var(--green);
+      }
+
+      .toolbar-sep {
+        width: 1px;
+        height: 26px;
+        background: var(--line-strong);
+      }
+
+      .current {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      .current-icon {
+        width: 25px;
+        height: 20px;
+        border: 2px solid #d8e4e8;
+        border-radius: 4px;
+        position: relative;
+      }
+
+      .current-icon::after {
+        position: absolute;
+        left: 7px;
+        bottom: -6px;
+        width: 8px;
+        height: 2px;
+        background: #d8e4e8;
+        content: "";
+      }
+
+      .ghost-button {
+        border: 0;
+        background: transparent;
+        color: #ccd7db;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .layout {
+        height: calc(100% - 54px - 56px - 88px);
+        display: grid;
+        grid-template-columns: 300px minmax(560px, 1fr) 500px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .left,
+      .center,
+      .right {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .left {
+        padding: 22px 20px;
+        border-right: 1px solid var(--line);
+      }
+
+      .center {
+        padding: 22px;
+        border-right: 1px solid var(--line);
+      }
+
+      .right {
+        padding: 20px 20px 10px;
+      }
+
+      .section-label {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 15px;
+        font-weight: 750;
+      }
+
+      .mode-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .mode-card {
+        min-height: 110px;
+        display: grid;
+        grid-template-columns: 48px 1fr 24px;
+        gap: 14px;
+        align-items: center;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+        color: var(--muted);
+      }
+
+      .mode-card.active {
+        border-color: rgba(94, 147, 255, 0.86);
+        background: linear-gradient(135deg, rgba(94, 147, 255, 0.24), rgba(94, 147, 255, 0.08));
+        color: var(--text);
+      }
+
+      .mode-icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(232, 244, 247, 0.5);
+        border-radius: 9px;
+        color: #e7f1f4;
+        font-size: 15px;
+        font-weight: 900;
+      }
+
+      .mode-card h2 {
+        margin: 0 0 7px;
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .mode-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .check {
+        width: 23px;
+        height: 23px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--blue);
+        color: #fff;
+        font-size: 15px;
+        font-weight: 900;
+      }
+
+      .left-note {
+        position: absolute;
+        bottom: 104px;
+        display: flex;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .config-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .config-header h2 {
+        margin: 0;
+        color: #c7d3d7;
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .select-lite {
+        min-width: 150px;
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 12px;
+        color: #dce6e9;
+        background: rgba(255, 255, 255, 0.035);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .config-box {
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        background: rgba(18, 24, 28, 0.82);
+      }
+
+      .row {
+        min-height: 78px;
+        display: grid;
+        grid-template-columns: 120px minmax(220px, 1fr) 110px 44px;
+        align-items: center;
+        gap: 18px;
+        padding: 0 24px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .row:last-child {
+        border-bottom: 0;
+      }
+
+      .row.compact {
+        min-height: 66px;
+      }
+
+      .row-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .tiny-info {
+        width: 18px;
+        height: 18px;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(199, 214, 219, 0.34);
+        border-radius: 50%;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .field {
+        height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 5px;
+        padding: 0 16px;
+        background: rgba(6, 9, 11, 0.26);
+        color: #e8f0f2;
+        font-size: 16px;
+        font-weight: 750;
+      }
+
+      .link-state {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .link-state strong {
+        color: var(--green);
+      }
+
+      .slider {
+        height: 4px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--blue) var(--pct), rgba(219, 232, 238, 0.18) var(--pct));
+        position: relative;
+      }
+
+      .slider::after {
+        position: absolute;
+        top: 50%;
+        left: var(--pct);
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #eef5f7;
+        box-shadow: 0 1px 7px rgba(0, 0, 0, 0.48);
+        content: "";
+        transform: translate(-50%, -50%);
+      }
+
+      .number {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 5px;
+        background: rgba(6, 9, 11, 0.26);
+        color: #edf5f6;
+        font-size: 18px;
+        font-weight: 750;
+      }
+
+      .unit {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .wave-row {
+        grid-template-columns: 120px minmax(0, 1fr) 88px;
+        background: rgba(35, 181, 195, 0.055);
+      }
+
+      .wave-desc {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 9px;
+        color: #d8e4e7;
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .chip {
+        border: 1px solid rgba(199, 214, 219, 0.16);
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #b5c3c9;
+      }
+
+      .switch {
+        width: 52px;
+        height: 28px;
+        border-radius: 999px;
+        padding: 3px;
+        background: var(--cyan);
+        margin-left: auto;
+      }
+
+      .switch i {
+        display: block;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        margin-left: 24px;
+        background: #fff;
+      }
+
+      .target-row {
+        min-height: 110px;
+        grid-template-columns: 120px minmax(0, 1fr) 92px;
+      }
+
+      .hint {
+        grid-column: 2 / span 2;
+        margin-top: -16px;
+        color: var(--muted-2);
+        font-size: 12px;
+      }
+
+      .status-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .status-card {
+        min-height: 88px;
+        display: grid;
+        grid-template-columns: 50px 1fr auto;
+        gap: 18px;
+        align-items: center;
+        padding: 14px 18px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.018));
+      }
+
+      .status-mark {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border: 2px solid currentColor;
+        border-radius: 50%;
+        color: var(--green);
+        font-size: 20px;
+        font-weight: 900;
+      }
+
+      .status-card h3 {
+        margin: 0 0 5px;
+        color: #f2f8f9;
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .status-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .status-card strong {
+        color: var(--green);
+      }
+
+      .small-action {
+        min-width: 94px;
+        height: 42px;
+        border: 1px solid var(--line-strong);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.035);
+        color: #e8f0f2;
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .log-box {
+        min-height: 170px;
+        padding: 14px 16px 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(10, 14, 17, 0.72);
+      }
+
+      .log-head {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        color: #e7eff1;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .log-head span {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .log-lines {
+        display: grid;
+        gap: 5px;
+        color: #b8c5ca;
+        font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .log-lines b {
+        color: var(--green);
+      }
+
+      .log-lines i {
+        color: var(--amber);
+        font-style: normal;
+      }
+
+      .spark {
+        height: 84px;
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background:
+          linear-gradient(rgba(216, 232, 237, 0.06) 1px, transparent 1px) 0 0 / 100% 27px,
+          linear-gradient(180deg, rgba(7, 12, 15, 0.86), rgba(8, 13, 16, 0.98));
+        position: relative;
+        overflow: hidden;
+      }
+
+      .spark::before,
+      .spark::after {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 25px;
+        height: 42px;
+        clip-path: polygon(0 100%, 8% 100%, 10% 45%, 13% 100%, 18% 100%, 21% 18%, 25% 100%, 45% 100%, 49% 62%, 53% 100%, 100% 100%);
+        content: "";
+      }
+
+      .spark::before {
+        background: rgba(94, 99, 255, 0.22);
+        border-top: 2px solid #6765ff;
+      }
+
+      .spark::after {
+        height: 24px;
+        background: rgba(39, 211, 117, 0.18);
+        border-top: 2px solid #28d371;
+      }
+
+      .bottom-bar {
+        height: 88px;
+        display: grid;
+        grid-template-columns: 1fr 330px 300px 1fr;
+        align-items: center;
+        gap: 40px;
+        padding: 0 40px;
+        background: linear-gradient(180deg, rgba(18, 24, 28, 0.84), rgba(10, 14, 17, 0.96));
+      }
+
+      .summary {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .summary strong {
+        color: var(--text);
+      }
+
+      .primary,
+      .danger {
+        height: 56px;
+        border-radius: 6px;
+        font-size: 17px;
+        font-weight: 850;
+      }
+
+      .primary {
+        border: 1px solid rgba(97, 216, 125, 0.42);
+        background: linear-gradient(180deg, rgba(43, 137, 67, 0.72), rgba(23, 87, 41, 0.78));
+        color: #effff2;
+      }
+
+      .danger {
+        border: 1px solid rgba(255, 120, 104, 0.3);
+        background: rgba(255, 255, 255, 0.045);
+        color: var(--red);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="window">
+      <header class="titlebar">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <h1>弱网控制台</h1>
+        <div></div>
+      </header>
+
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="status-line"><span class="dot"></span> Root: <strong>正常</strong></div>
+          <div class="toolbar-sep"></div>
+          <div class="current"><span class="current-icon"></span> 当前：Mac Unity / 网络波动模式</div>
+        </div>
+        <div class="toolbar-right">
+          <button class="ghost-button">导出日志</button>
+          <button class="ghost-button">设置</button>
+        </div>
+      </div>
+
+      <main class="layout">
+        <aside class="left">
+          <p class="section-label">模式选择</p>
+          <div class="mode-list">
+            <section class="mode-card active">
+              <div class="mode-icon">MU</div>
+              <div>
+                <h2>Mac Unity</h2>
+                <p>针对 Unity 编辑器 / 播放器及资源请求</p>
+              </div>
+              <span class="check">✓</span>
+            </section>
+            <section class="mode-card">
+              <div class="mode-icon">MG</div>
+              <div>
+                <h2>Mac 全局</h2>
+                <p>对 Mac 所有非 localhost 网络流量生效</p>
+              </div>
+            </section>
+            <section class="mode-card">
+              <div class="mode-icon">AD</div>
+              <div>
+                <h2>Android VPN</h2>
+                <p>通过 ADB + SOCKS，对目标包名生效</p>
+              </div>
+            </section>
+            <section class="mode-card">
+              <div class="mode-icon">GW</div>
+              <div>
+                <h2>macOS 网关</h2>
+                <p>对指定测试设备 IP 施加规则</p>
+              </div>
+            </section>
+          </div>
+          <div class="left-note"><span class="tiny-info">i</span>切换模式会先清除当前规则，避免多条 pf/dnctl 规则叠加。</div>
+        </aside>
+
+        <section class="center">
+          <div class="config-header">
+            <h2>弱网配置</h2>
+            <div class="select-lite">配置模板 <span>⌄</span></div>
+          </div>
+
+          <div class="config-box">
+            <div class="row compact">
+              <div class="row-label">通道 <span class="tiny-info">i</span></div>
+              <div class="field">Wi-Fi <span>⌄</span></div>
+              <div class="link-state">链路：<strong>en0</strong></div>
+            </div>
+
+            <div class="row compact">
+              <div class="row-label">预设</div>
+              <div class="field">网络波动模式 <span>⌄</span></div>
+              <button class="small-action">管理预设</button>
+            </div>
+
+            <div class="row compact wave-row">
+              <div class="row-label">波动 <span class="tiny-info">?</span></div>
+              <div class="wave-desc">
+                <span>地铁/电梯随机跳变</span>
+                <span class="chip">下行 50K~3M</span>
+                <span class="chip">上行 20K~1M</span>
+                <span class="chip">延迟 30~800ms</span>
+              </div>
+              <div class="switch"><i></i></div>
+            </div>
+
+            <div class="row">
+              <div class="row-label">延迟 <span class="tiny-info">i</span></div>
+              <div class="slider" style="--pct: 58%"></div>
+              <div class="number">300</div>
+              <div class="unit">ms</div>
+            </div>
+
+            <div class="row">
+              <div class="row-label">丢包 <span class="tiny-info">i</span></div>
+              <div class="slider" style="--pct: 24%"></div>
+              <div class="number">8</div>
+              <div class="unit">%</div>
+            </div>
+
+            <div class="row">
+              <div class="row-label">限速 <span class="tiny-info">i</span></div>
+              <div class="slider" style="--pct: 18%"></div>
+              <div class="number">512</div>
+              <div class="unit">kbps</div>
+            </div>
+
+            <div class="row">
+              <div class="row-label">抖动 <span class="tiny-info">i</span></div>
+              <div class="slider" style="--pct: 64%"></div>
+              <div class="number">80</div>
+              <div class="unit">ms</div>
+            </div>
+
+            <div class="row target-row">
+              <div class="row-label">目标范围 <span class="tiny-info">i</span></div>
+              <div class="field">Unity / CDN / SDK 域名组</div>
+              <button class="small-action">编辑</button>
+              <div class="hint">多个目标用逗号分隔，支持域名、IP、IP 段与通配符。留空则匹配默认范围。</div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="right">
+          <div class="status-stack">
+            <section class="status-card">
+              <div class="status-mark">✓</div>
+              <div>
+                <h3>规则已应用</h3>
+                <p>网络波动模式 / Mac Unity<br />更新时间：2026-06-29 14:33:21</p>
+              </div>
+              <button class="small-action">暂停</button>
+            </section>
+
+            <section class="status-card">
+              <div class="status-mark" style="color: var(--blue)">⌖</div>
+              <div>
+                <h3>最近目标命中</h3>
+                <p>命中连接数：23<br />最近命中：2 秒前</p>
+              </div>
+              <button class="small-action">详情</button>
+            </section>
+
+            <section class="status-card">
+              <div class="status-mark" style="color: #e6f1f4">R</div>
+              <div>
+                <h3>Root Service</h3>
+                <p>状态：<strong>运行中</strong><br />守护进程 PID：7421</p>
+              </div>
+              <button class="small-action">重启</button>
+            </section>
+
+            <section class="status-card">
+              <div class="status-mark" style="color: #e6f1f4">pf</div>
+              <div>
+                <h3>pf/dnctl</h3>
+                <p>状态：<strong>已加载</strong><br />规则锚点：weaknet_lab</p>
+              </div>
+              <button class="small-action">刷新</button>
+            </section>
+          </div>
+
+          <div class="spark"></div>
+
+          <section class="log-box">
+            <div class="log-head">最近日志 <span>清空</span></div>
+            <div class="log-lines">
+              <div>14:33:21 <b>[INFO]</b> 网络波动重配：下行 1.2Mbps 上行 456Kbps</div>
+              <div>14:33:21 <b>[INFO]</b> 目标范围：Unity / CDN / SDK 域名组</div>
+              <div>14:33:20 <b>[INFO]</b> pf 规则加载成功 anchor: weaknet_lab</div>
+              <div>14:33:20 <i>[WARN]</i> 检测到旧规则，已自动清理</div>
+              <div>14:33:18 <b>[INFO]</b> 切换到模式：Mac Unity</div>
+              <div>14:33:18 <b>[INFO]</b> 应用弱网请求已发送</div>
+            </div>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="bottom-bar">
+        <div class="summary"><strong>将应用：</strong>Mac Unity / 网络波动模式<br />目标：Unity / CDN / SDK 域名组</div>
+        <button class="primary">✓ Apply 应用弱网</button>
+        <button class="danger">Clear 清除弱网</button>
+        <div></div>
+      </footer>
+    </div>
+  </body>
+</html>

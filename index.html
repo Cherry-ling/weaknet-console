@@ -7,9 +7,10 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23087f8c'/%3E%3Cpath d='M7 18h4v7H7zm7-6h4v13h-4zm7-5h4v18h-4z' fill='white'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body class="theme-cyber theme-terminal-aurora">
+  <body class="theme-cyber theme-terminal-aurora console-layout">
     <div class="app-shell">
       <header class="topbar">
+        <div class="window-lights" aria-hidden="true"><i></i><i></i><i></i></div>
         <div class="brand-block">
           <div class="brand-meta">
             <p class="eyebrow">Game Network Lab</p>
@@ -25,10 +26,9 @@
               </button>
             </div>
           </div>
-          <h1>游戏性能与弱网控制台</h1>
+          <h1>弱网控制台</h1>
         </div>
         <div class="topbar-actions" aria-label="全局状态">
-          <div class="status-pill" id="runtimeMode">未连接</div>
           <button class="icon-button" id="resetButton" type="button" title="恢复正常网络" aria-label="恢复正常网络">
             <span aria-hidden="true">↺</span>
           </button>
@@ -36,8 +36,22 @@
         </div>
       </header>
 
+      <section class="console-statusbar" aria-label="运行状态">
+        <div class="console-root-state">
+          <span class="console-status-dot" aria-hidden="true"></span>
+          <span>Root:</span>
+          <strong id="runtimeMode">未连接</strong>
+        </div>
+        <div class="console-status-separator" aria-hidden="true"></div>
+        <div class="console-current-mode">
+          <span class="console-device-icon" aria-hidden="true">MAC</span>
+          <span>当前：</span>
+          <strong id="topCurrentSummary">Mac 全局弱网 / 正常网络</strong>
+        </div>
+      </section>
+
       <main class="workspace">
-        <div class="workspace-left">
+        <aside class="mode-column">
         <section class="panel device-panel" aria-labelledby="device-title">
           <div class="section-heading">
             <div>
@@ -45,6 +59,36 @@
               <h2 id="device-title">测试设备</h2>
             </div>
             <span class="live-dot" id="deviceStatus">未连接</span>
+          </div>
+          <div class="mode-card-list" id="modeCardList" aria-label="模式选择">
+            <button class="mode-card-option" data-mode="mac-unity" type="button">
+              <span class="mode-card-icon">MU</span>
+              <span>
+                <strong>Mac Unity</strong>
+                <em>针对 Unity 编辑器 / 播放器及资源请求</em>
+              </span>
+            </button>
+            <button class="mode-card-option" data-mode="mac-global" type="button">
+              <span class="mode-card-icon">MG</span>
+              <span>
+                <strong>Mac 全局</strong>
+                <em>对 Mac 所有非 localhost 网络流量生效</em>
+              </span>
+            </button>
+            <button class="mode-card-option" data-mode="android-vpn" type="button">
+              <span class="mode-card-icon">AD</span>
+              <span>
+                <strong>Android VPN</strong>
+                <em>通过 ADB + SOCKS，对目标包名生效</em>
+              </span>
+            </button>
+            <button class="mode-card-option" data-mode="macos" type="button">
+              <span class="mode-card-icon">GW</span>
+              <span>
+                <strong>macOS 网关</strong>
+                <em>对指定测试设备 IP 施加规则</em>
+              </span>
+            </button>
           </div>
           <div class="device-grid">
             <div id="networkModeField" class="device-field mode-field">
@@ -139,7 +183,9 @@
             <p class="device-note" id="deviceNote">请启动本地 Agent 后执行真实弱网操作。</p>
           </div>
         </section>
+        </aside>
 
+        <section class="config-column">
         <section class="panel preset-panel" aria-labelledby="preset-title">
           <div class="section-heading">
             <div>
@@ -154,75 +200,6 @@
           <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
         </section>
 
-        <section class="panel history-panel" aria-labelledby="history-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Report</p>
-              <h2 id="history-title">历史记录</h2>
-            </div>
-            <button class="ghost-button" id="clearHistoryButton" type="button">清空</button>
-          </div>
-          <div class="history-list" id="historyList"></div>
-        </section>
-        </div>
-
-        <div class="workspace-main">
-        <section class="panel monitor-panel" aria-labelledby="monitor-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Performance</p>
-              <div class="monitor-title-row">
-                <h2 id="monitor-title">实时网络曲线</h2>
-                <span class="status-pill monitor-title-status" id="networkCurveStatus">实时采集中</span>
-                <span class="status-pill monitor-title-status" id="monitorStatus" hidden>未采集</span>
-              </div>
-            </div>
-            <div class="monitor-tabs" role="tablist" aria-label="监控页签">
-              <button class="monitor-tab active" id="networkCurveTab" data-monitor-tab="network" type="button" role="tab" aria-selected="true" aria-controls="networkCurvePanel">实时网络曲线</button>
-              <button class="monitor-tab" id="performanceTab" data-monitor-tab="performance" type="button" role="tab" aria-selected="false" aria-controls="performancePanel">性能监控</button>
-            </div>
-          </div>
-          <div class="monitor-tab-panel active" id="networkCurvePanel" role="tabpanel" aria-labelledby="networkCurveTab">
-            <div class="network-curve-head">
-              <div class="network-curve-legend" aria-label="网络曲线图例">
-                <span><i class="legend-line down"></i>下行限制 <strong id="networkDownLegend">--</strong></span>
-                <span><i class="legend-line up"></i>上行限制 <strong id="networkUpLegend">--</strong></span>
-              </div>
-            </div>
-            <section class="current-effect-strip" id="currentEffectStrip" aria-live="polite">
-              <div>
-                <span id="currentEffectLabel">当前效果</span>
-                <strong id="currentEffectTitle">正常网络</strong>
-              </div>
-              <p id="currentEffectMeta">未施加弱网</p>
-              <div class="current-effect-chips" id="currentEffectChips"></div>
-            </section>
-            <div class="network-chart-wrap">
-              <canvas id="networkCurveChart" height="180" aria-label="实时网络曲线"></canvas>
-            </div>
-          </div>
-          <div class="monitor-tab-panel" id="performancePanel" role="tabpanel" aria-labelledby="performanceTab" hidden>
-            <div class="monitor-actions">
-              <div class="performance-status-detail" id="performanceStatusDetail" aria-live="polite">
-                <i aria-hidden="true"></i>
-                <div>
-                  <strong id="performanceStatusTitle">真机已连接，等待开始采集</strong>
-                  <span id="performanceStatusMessage">请选择目标游戏包名后点击开始。</span>
-                </div>
-              </div>
-              <div class="monitor-action-buttons">
-                <button class="primary-button compact-button" id="startMonitorButton" type="button">开始</button>
-                <button class="secondary-button compact-button" id="stopMonitorButton" type="button">停止</button>
-              </div>
-            </div>
-            <div class="perf-grid" id="performanceGrid"></div>
-            <div class="chart-wrap">
-              <canvas id="performanceChart" height="180" aria-label="性能实时曲线"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <div class="workspace-work-row">
         <section class="panel editor-panel" aria-labelledby="editor-title">
           <div class="section-heading">
             <div>
@@ -294,9 +271,38 @@
             </label>
           </form>
 
-          <div class="action-row">
-            <button class="primary-button" id="applyButton" type="button">应用预设</button>
-            <button class="secondary-button" id="clearButton" type="button">清除弱网</button>
+        </section>
+        </section>
+
+        <aside class="status-column">
+        <section class="panel monitor-panel" aria-labelledby="monitor-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Network</p>
+              <div class="monitor-title-row">
+                <h2 id="monitor-title">实时网络曲线</h2>
+                <span class="status-pill monitor-title-status" id="networkCurveStatus">实时采集中</span>
+              </div>
+            </div>
+          </div>
+          <div class="monitor-tab-panel active" id="networkCurvePanel" role="region" aria-labelledby="monitor-title">
+            <section class="current-effect-strip" id="currentEffectStrip" aria-live="polite">
+              <div>
+                <span id="currentEffectLabel">当前效果</span>
+                <strong id="currentEffectTitle">正常网络</strong>
+              </div>
+              <p id="currentEffectMeta">未施加弱网</p>
+              <div class="current-effect-chips" id="currentEffectChips"></div>
+            </section>
+            <div class="network-curve-head">
+              <div class="network-curve-legend" aria-label="网络曲线图例">
+                <span><i class="legend-line down"></i>下行限制 <strong id="networkDownLegend">--</strong></span>
+                <span><i class="legend-line up"></i>上行限制 <strong id="networkUpLegend">--</strong></span>
+              </div>
+            </div>
+            <div class="network-chart-wrap">
+              <canvas id="networkCurveChart" height="180" aria-label="实时网络曲线"></canvas>
+            </div>
           </div>
         </section>
 
@@ -320,9 +326,28 @@
           </section>
           <pre id="commandPreview" hidden></pre>
         </section>
-        </div>
-        </div>
+
+        <section class="panel history-panel" aria-labelledby="history-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Report</p>
+              <h2 id="history-title">历史记录</h2>
+            </div>
+            <button class="ghost-button" id="clearHistoryButton" type="button">清空</button>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+        </aside>
       </main>
+
+      <footer class="bottom-actionbar" aria-label="弱网操作">
+        <div class="bottom-action-summary">
+          <span>将应用：<strong id="bottomActionMode">Mac 全局弱网 / 正常网络</strong></span>
+          <span>目标：<strong id="bottomActionTarget">整台 Mac 外网流量</strong></span>
+        </div>
+        <button class="primary-button" id="applyButton" type="button">✓ Apply 应用弱网</button>
+        <button class="secondary-button" id="clearButton" type="button">Clear 清除弱网</button>
+      </footer>
     </div>
 
     <div class="gateway-dialog-backdrop" id="gatewayDialog" role="presentation" hidden>
