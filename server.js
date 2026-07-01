@@ -15,7 +15,8 @@ const PORT = Number(process.env.PORT || 8123);
 const HOST = process.env.HOST || "127.0.0.1";
 const HOST_PLATFORM = process.platform;
 const IS_WIN32 = HOST_PLATFORM === "win32";
-const ADB = process.env.ADB || "adb";
+const ADB_POLICY = resolveAdbPolicy();
+const ADB = resolveAdbBinary();
 const PFCTL = process.env.PFCTL || "pfctl";
 const DNCTL = process.env.DNCTL || "dnctl";
 const WEAKNET_ANCHOR = "weaknet_lab";
@@ -60,11 +61,12 @@ const THEME_KEYS = new Set(["terminal-aurora", "cyber", "classic"]);
 const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const ANDROID_VPN_AGENT = {
   packageName: "com.weaknet.agent",
-  versionCode: 8,
+  versionCode: 11,
   activityComponent: "com.weaknet.agent/.MainActivity",
   receiverComponent: "com.weaknet.agent/.CommandReceiver",
   apkPath: path.join(ROOT, "android-agent", "dist", "weaknet-agent-debug.apk"),
   buildScript: path.join(ROOT, "android-agent", "build-agent.sh"),
+  buildScriptWin32: path.join(ROOT, "android-agent", "build-agent.ps1"),
   statusFile: "files/status.json",
   actions: {
     apply: "com.weaknet.agent.APPLY",
@@ -84,6 +86,7 @@ const weaknetRuntime = {
   active: false,
   activeProfile: null,
   currentPipeProfile: null,
+  startedAt: null,
   activeMode: "normal",
 };
 
@@ -109,6 +112,40 @@ const mimeTypes = {
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
 };
+
+function resolveAdbBinary() {
+  if (process.env.ADB) return process.env.ADB;
+  if (!IS_WIN32) return "adb";
+
+  const vendoredAdb = path.join(ROOT, "third_party", "android", "platform-tools", "adb.exe");
+  const candidates = [
+    vendoredAdb,
+    process.env.ANDROID_SDK_ROOT && path.join(process.env.ANDROID_SDK_ROOT, "platform-tools", "adb.exe"),
+    process.env.ANDROID_HOME && path.join(process.env.ANDROID_HOME, "platform-tools", "adb.exe"),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Android", "Sdk", "platform-tools", "adb.exe"),
+    process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Android", "Android Studio", "platform-tools", "adb.exe"),
+    process.env["ProgramFiles(x86)"] &&
+      path.join(process.env["ProgramFiles(x86)"], "Android", "Android Studio", "platform-tools", "adb.exe"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+
+  if (ADB_POLICY.requireVendored && !fs.existsSync(vendoredAdb)) {
+    throw new Error(`Vendored adb.exe is required but missing: ${vendoredAdb}`);
+  }
+
+  return "adb";
+}
+
+function resolveAdbPolicy() {
+  return {
+    requireVendored: process.env.WEAKNET_REQUIRE_VENDORED_ADB === "1",
+  };
+}
 
 function createSourceSignature(root) {
   return SOURCE_SIGNATURE_ITEMS.map((item) => {
@@ -311,7 +348,34 @@ async function runPrivileged(label, command, args, options = {}) {
   };
 }
 
-function adb(args, timeoutMs = 5000) {
+function isAdbServerRetryableFailure(result) {
+  const text = `${result.error || ""}\n${result.stderr || ""}\n${result.stdout || ""}`;
+  return /device offline|daemon not running|cannot connect to daemon|server version|protocol fault|device unauthorized|no devices\/emulators found/i.test(
+    text,
+  );
+}
+
+async function ensureAdbServerReady(forceRestart = false) {
+  if (forceRestart) {
+    await run(ADB, ["kill-server"], 5000);
+  }
+  return run(ADB, ["start-server"], 8000);
+}
+
+async function adb(args, timeoutMs = 5000, options = {}) {
+  const allowRetry = options.allowRetry !== false;
+  let result = await run(ADB, args, timeoutMs);
+  if (result.ok || !allowRetry || !isAdbServerRetryableFailure(result)) {
+    return result;
+  }
+
+  await ensureAdbServerReady(false);
+  result = await run(ADB, args, timeoutMs);
+  if (result.ok || !isAdbServerRetryableFailure(result)) {
+    return result;
+  }
+
+  await ensureAdbServerReady(true);
   return run(ADB, args, timeoutMs);
 }
 
@@ -1364,24 +1428,51 @@ function getAndroidVpnProfileSupport(profile) {
   };
 }
 
-async function ensureAndroidAgentApk(steps) {
-  if (fs.existsSync(ANDROID_VPN_AGENT.apkPath)) {
-    return;
-  }
-  if (!fs.existsSync(ANDROID_VPN_AGENT.buildScript)) {
-    throw makeHttpError("Android VPN Agent 构建脚本不存在", 500, { steps });
-  }
-
-  const result = await run(ANDROID_VPN_AGENT.buildScript, [], 120000);
-  steps.push(makeCommandStep("构建 Android VPN Agent", ANDROID_VPN_AGENT.buildScript, [], result));
-  if (!result.ok || !fs.existsSync(ANDROID_VPN_AGENT.apkPath)) {
-    throw makeHttpError("Android VPN Agent APK 构建失败", 500, { steps });
-  }
-}
-
 async function isAndroidVpnAgentInstalled(serial) {
   const result = await adbShell(serial, ["pm", "path", ANDROID_VPN_AGENT.packageName], 5000);
   return result.ok && result.stdout.includes(ANDROID_VPN_AGENT.packageName);
+}
+
+function isTruthyEnv(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || "").trim());
+}
+
+function getAndroidAgentBuildCommand() {
+  if (!IS_WIN32) {
+    return {
+      command: ANDROID_VPN_AGENT.buildScript,
+      args: [],
+      scriptPath: ANDROID_VPN_AGENT.buildScript,
+    };
+  }
+
+  return {
+    command: "powershell.exe",
+    args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ANDROID_VPN_AGENT.buildScriptWin32],
+    scriptPath: ANDROID_VPN_AGENT.buildScriptWin32,
+  };
+}
+
+function shouldRebuildAndroidAgentApk() {
+  if (!fs.existsSync(ANDROID_VPN_AGENT.apkPath)) return true;
+  return isTruthyEnv(process.env.WEAKNET_BUILD_ANDROID_AGENT) || isTruthyEnv(process.env.WEAKNET_REBUILD_ANDROID_AGENT);
+}
+
+async function ensureAndroidAgentApk(steps) {
+  if (fs.existsSync(ANDROID_VPN_AGENT.apkPath) && !shouldRebuildAndroidAgentApk()) {
+    return;
+  }
+
+  const buildCommand = getAndroidAgentBuildCommand();
+  if (!fs.existsSync(buildCommand.scriptPath)) {
+    throw makeHttpError("Android VPN Agent 构建脚本不存在", 500, { steps });
+  }
+
+  const result = await run(buildCommand.command, buildCommand.args, 120000);
+  steps.push(makeCommandStep("构建 Android VPN Agent", buildCommand.scriptPath, [], result));
+  if (!result.ok || !fs.existsSync(ANDROID_VPN_AGENT.apkPath)) {
+    throw makeHttpError("Android VPN Agent APK 构建失败", 500, { steps });
+  }
 }
 
 async function getAndroidVpnAgentVersion(serial) {
@@ -1420,7 +1511,7 @@ async function installAndroidVpnAgent(body) {
   let result = await adb(args, 120000);
   steps.push(makeAdbStep("安装 Android VPN Agent", args, result));
 
-  if (!result.ok && /unknown option|unrecognized option/i.test(`${result.stderr}\n${result.stdout}\n${result.error}`)) {
+  if (!result.ok && !/Success/i.test(result.stdout || "")) {
     args = ["-s", serial, "install", "-r", "-d", ANDROID_VPN_AGENT.apkPath];
     result = await adb(args, 120000);
     steps.push(makeAdbStep("安装 Android VPN Agent（兼容模式）", args, result));
@@ -1503,7 +1594,8 @@ async function getAndroidVpnAgentStatus(serial) {
     adbShell(serial, ["dumpsys", "activity", "services", ANDROID_VPN_AGENT.packageName], 5000),
   ]);
   const status = statusResult.ok ? parseAndroidAgentStatus(statusResult.stdout) : null;
-  const running = /WeaknetVpnService|com\.weaknet\.agent\/\.WeaknetVpnService/.test(serviceResult.stdout || "");
+  const serviceRunning = /WeaknetVpnService|com\.weaknet\.agent\/\.WeaknetVpnService/.test(serviceResult.stdout || "");
+  const running = Boolean(serviceRunning || (status && status.running));
   const macSocks = getSocksRuntimeStatus();
   const socksMissing = Boolean(status && status.running && status.mode === "socks" && !macSocks.active);
 
@@ -1515,6 +1607,7 @@ async function getAndroidVpnAgentStatus(serial) {
     expectedVersionCode: ANDROID_VPN_AGENT.versionCode,
     updateRequired: version.versionCode < ANDROID_VPN_AGENT.versionCode,
     running,
+    hostSocks: macSocks,
     macSocks,
     packageName: ANDROID_VPN_AGENT.packageName,
     status,
@@ -1689,7 +1782,12 @@ async function clearAndroidVpn(body) {
 
   const steps = [];
   const privilege = await getPrivilegeStatus();
-  if (privilege.ok) {
+  if (IS_WIN32) {
+    if (socksRuntime.active || weaknetRuntime.active) {
+      const weaknet = await clearWin32WeaknetRules();
+      steps.push(...(weaknet.steps || []));
+    }
+  } else if (privilege.ok) {
     steps.push(...(await runClearWeaknetSteps()));
   } else if (socksRuntime.active || weaknetRuntime.active) {
     steps.push(makeInternalStep("跳过 Mac 弱网清理", false, privilege.message));
@@ -1759,6 +1857,10 @@ async function applyAndroidVpn(body) {
       ...request,
       support,
     };
+  }
+
+  if (support.mode !== "socks" && (socksRuntime.active || weaknetRuntime.active)) {
+    await clearAndroidVpn({ serial });
   }
 
   let profileForAgent = profile;
@@ -2078,6 +2180,11 @@ function readMacUnityBuiltinTargets() {
   }
 }
 
+function getMacUnityBuiltinTargetInput() {
+  const builtin = readMacUnityBuiltinTargets();
+  return Array.isArray(builtin.targets) ? builtin.targets.join(", ") : "";
+}
+
 function getUnsafeMacUnityAddressReason(address, gatewayIp) {
   const parts = getIpv4Parts(address);
   if (!parts) return "目标服务器不是有效 IPv4 地址";
@@ -2380,12 +2487,27 @@ function resetWeaknetRuntimeState() {
   weaknetRuntime.active = false;
   weaknetRuntime.activeProfile = null;
   weaknetRuntime.currentPipeProfile = null;
+  weaknetRuntime.startedAt = null;
   weaknetRuntime.activeMode = "normal";
 }
 
 function rememberWin32WeaknetProfile(profile, mode) {
   rememberWeaknetProfile(profile, mode);
   weaknetRuntime.blocked = profile && profile.disconnectMode === "always";
+  weaknetRuntime.startedAt = Date.now();
+}
+
+function isWin32PeriodicBlocked(profile, snapshot) {
+  if (!profile || profile.disconnectMode !== "periodic") return false;
+  if (!(profile.disconnectDurationSec > 0) || !(profile.disconnectIntervalSec > 0)) return false;
+
+  const startedAtRaw = (snapshot && snapshot.startedAt) || weaknetRuntime.startedAt;
+  const startedAtMs = new Date(startedAtRaw).getTime();
+  if (!Number.isFinite(startedAtMs)) return false;
+
+  const elapsedSec = Math.max(0, (Date.now() - startedAtMs) / 1000);
+  const position = elapsedSec % profile.disconnectIntervalSec;
+  return position < profile.disconnectDurationSec;
 }
 
 function getWin32ProfileDelayMs(profile) {
@@ -2413,7 +2535,10 @@ function getWin32NetworkCurveStatus() {
   const snapshot = runtimeStatus.status || null;
   const profile = (snapshot && snapshot.profile) || weaknetRuntime.activeProfile || {};
   const active = Boolean(weaknetRuntime.active || (runtimeStatus.running && snapshot && snapshot.ok !== false));
-  const blocked = Boolean(active && (weaknetRuntime.blocked || profile.disconnectMode === "always"));
+  const blocked = Boolean(
+    active &&
+      (weaknetRuntime.blocked || profile.disconnectMode === "always" || isWin32PeriodicBlocked(profile, snapshot)),
+  );
   const downBandwidth = active ? bandwidthFromKbps(profile.downloadKbps) : null;
   const upBandwidth = active ? bandwidthFromKbps(profile.uploadKbps) : null;
   const downKbps = blocked ? 0 : downBandwidth ? downBandwidth.kbps : 0;
@@ -2450,20 +2575,45 @@ async function applyWin32Weaknet(body) {
   const request = normalizeWeaknetRequest(body);
   const { profile } = request;
   const win32Scope = mapWin32TargetScope(request.targetScope);
+  let effectiveRequest = request;
+  let resolvedMacUnityTargets = [];
 
   if (profile.presetKey === "normal") {
     return clearWin32WeaknetRules({ ...request, privilege, win32Scope });
   }
 
+  if (request.targetScope === "mac-unity") {
+    const fallbackTargetEndpoint = request.targetEndpoint || getMacUnityBuiltinTargetInput();
+    effectiveRequest = {
+      ...request,
+      targetEndpoint: fallbackTargetEndpoint,
+      targetApp: request.targetApp || fallbackTargetEndpoint,
+    };
+    try {
+      resolvedMacUnityTargets = await resolveMacUnityTargets(fallbackTargetEndpoint);
+    } catch (error) {
+      const steps = [makeWin32Step("解析 Windows 目标弱网内置目标", false, error.message)];
+      return buildWeaknetResponse("win32-config", "Windows 目标弱网目标解析失败", steps, {
+        ...effectiveRequest,
+        privilege,
+        win32Scope,
+      });
+    }
+  }
+
   const steps = [];
   let config = null;
   try {
-    config = win32Weaknet.buildWin32WeaknetConfig({ ...request, targetScope: win32Scope });
+    config = win32Weaknet.buildWin32WeaknetConfig({
+      ...effectiveRequest,
+      targetScope: win32Scope,
+      resolvedTargets: resolvedMacUnityTargets,
+    });
     steps.push(makeWin32Step("生成 Windows WinDivert 配置", true, `mode=${config.mode}, rules=${config.rules.length}`));
   } catch (error) {
     steps.push(makeWin32Step("生成 Windows WinDivert 配置", false, error.message));
     return buildWeaknetResponse("win32-config", "Windows WinDivert 配置生成失败", steps, {
-      ...request,
+      ...effectiveRequest,
       privilege,
       win32Scope,
     });
@@ -2475,7 +2625,7 @@ async function applyWin32Weaknet(body) {
   } catch (error) {
     steps.push(makeWin32Step("清理上一次 Windows WinDivert 后端", false, error.message));
     return buildWeaknetResponse("win32-preflight", "Windows WinDivert 下发前清理失败", steps, {
-      ...request,
+      ...effectiveRequest,
       privilege,
       win32Scope,
     });
@@ -2483,21 +2633,25 @@ async function applyWin32Weaknet(body) {
 
   let startResult = null;
   try {
-    startResult = win32Weaknet.startWin32Weaknet({ ...request, targetScope: win32Scope }, { ...getWin32DriverOptions(), config });
+    startResult = win32Weaknet.startWin32Weaknet(
+      { ...effectiveRequest, targetScope: win32Scope, resolvedTargets: resolvedMacUnityTargets },
+      { ...getWin32DriverOptions(), config },
+    );
     steps.push(makeWin32Step("启动 Windows WinDivert 后端", true, `pid=${startResult.pid}, exe=${startResult.executable}`));
   } catch (error) {
     steps.push(makeWin32Step("启动 Windows WinDivert 后端", false, error.message));
     return buildWeaknetResponse("win32-start", "Windows WinDivert 后端启动失败", steps, {
-      ...request,
+      ...effectiveRequest,
       privilege,
       win32Scope,
     });
   }
 
   const response = buildWeaknetResponse(win32Scope, `${profile.displayNameZh} 已下发到 ${getWin32TargetLabel(win32Scope)}`, steps, {
-    ...request,
+    ...effectiveRequest,
     privilege,
     win32Scope,
+    macUnityTargets: resolvedMacUnityTargets,
     win32: {
       pid: startResult.pid,
       executable: startResult.executable,
@@ -2881,6 +3035,7 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, {
       ok: true,
       adb: ADB,
+      adbPolicy: ADB_POLICY,
       host: HOST,
       port: PORT,
       pid: process.pid,
@@ -3164,10 +3319,19 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res, decodeURIComponent(requestUrl.pathname));
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
   console.log(`Game network lab running at http://localhost:${PORT}`);
   console.log(`Bind address: ${HOST}`);
-  console.log(isRootProcess() ? "Admin mode: enabled" : "Admin mode: not enabled");
+  try {
+    const privilege = await getPrivilegeStatus();
+    console.log(
+      privilege.ok
+        ? `Admin mode: enabled (${privilege.mode})`
+        : `Admin mode: not enabled (${privilege.mode})`
+    );
+  } catch (error) {
+    console.log(`Admin mode: unknown (${error.message || error})`);
+  }
 });
 
 let shuttingDown = false;

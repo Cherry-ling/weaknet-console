@@ -25,6 +25,8 @@ internal sealed class ProfileRuntime
         }
     }
 
+    public DateTimeOffset StartedAt => _startedAt;
+
     public bool IsBlocked(WeaknetProfile profile)
     {
         if (profile.DisconnectMode == "always")

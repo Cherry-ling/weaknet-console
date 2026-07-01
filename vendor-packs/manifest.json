@@ -1,0 +1,168 @@
+﻿{
+    "schemaVersion":  1,
+    "repoRootMarker":  "launcher.js",
+    "stateRoot":  ".vendor-state/packs",
+    "defaultGroups":  [
+                          "runtime"
+                      ],
+    "packs":  [
+                  {
+                      "id":  "node-win-x64-runtime",
+                      "version":  "node-v24.18.0",
+                      "archive":  "vendor-packs/node-win-x64-runtime.zip",
+                      "targetPath":  "third_party/node/win-x64",
+                      "keyFiles":  [
+                                       "node.exe"
+                                   ],
+                      "groups":  [
+                                     "runtime",
+                                     "service",
+                                     "launcher"
+                                 ],
+                      "sha256":  "8092e15b876bdf498ee000a1cec5de4b870d1876ed82de343a2e468cb728e685",
+                      "sizeBytes":  34567865,
+                      "requiredAtStartup":  true,
+                      "description":  "Minimal vendored Node.js runtime used by launcher.js and server.js."
+                  },
+                  {
+                      "id":  "android-platform-tools",
+                      "version":  "platform-tools-37.0.0",
+                      "archive":  "vendor-packs/android-platform-tools.zip",
+                      "targetPath":  "third_party/android/platform-tools",
+                      "keyFiles":  [
+                                       "adb.exe",
+                                       "AdbWinApi.dll"
+                                   ],
+                      "groups":  [
+                                     "runtime",
+                                     "android-runtime",
+                                     "android-build"
+                                 ],
+                      "sha256":  "e9aa4faf588b6a6b752c99404fa379ac1ec9689680ef35a811e6ccd4046f75a0",
+                      "sizeBytes":  8091638,
+                      "requiredAtStartup":  true,
+                      "description":  "ADB and related platform-tools used for Android device install and control."
+                  },
+                  {
+                      "id":  "windows-backend-dist",
+                      "version":  "windivert-backend-win-x64",
+                      "archive":  "vendor-packs/windows-backend-dist-win-x64.zip",
+                      "targetPath":  "windows-backend/dist/win-x64",
+                      "keyFiles":  [
+                                       "Weaknet.WinDivertShaper.exe",
+                                       "WinDivert.dll",
+                                       "WinDivert64.sys"
+                                   ],
+                      "groups":  [
+                                     "runtime",
+                                     "service"
+                                 ],
+                      "sha256":  "bfdaba7808f9f2f4e0faaf5120814875973542e8200b6b52c7edaadde294c0df",
+                      "sizeBytes":  33249682,
+                      "requiredAtStartup":  true,
+                      "description":  "Self-contained Windows weaknet backend plus WinDivert runtime."
+                  },
+                  {
+                      "id":  "jdk-win-x64-core",
+                      "version":  "temurin-11.0.14.1-core",
+                      "archive":  "vendor-packs/jdk-win-x64-core.zip",
+                      "targetPath":  "third_party/jdk/win-x64",
+                      "keyFiles":  [
+                                       "bin/java.exe",
+                                       "bin/javac.exe",
+                                       "release"
+                                   ],
+                      "groups":  [
+                                     "android-build"
+                                 ],
+                      "sha256":  "aed89fa3cfb1e9a282c62786aa00c84da40ea54676f1add28115efe24489e487",
+                      "sizeBytes":  15813036,
+                      "requiredAtStartup":  false,
+                      "description":  "Vendored JDK support files, binaries, configs, and metadata for Android Agent rebuilds."
+                  },
+                  {
+                      "id":  "jdk-win-x64-lib-modules",
+                      "version":  "temurin-11.0.14.1-modules",
+                      "archive":  "vendor-packs/jdk-win-x64-lib-modules.zip",
+                      "targetPath":  "third_party/jdk/win-x64",
+                      "keyFiles":  [
+                                       "lib/modules"
+                                   ],
+                      "groups":  [
+                                     "android-build"
+                                 ],
+                      "sha256":  "3e1ee712afaf152e00f803b85017fea3f964e7552b5a4265a6619fa469e5ceaf",
+                      "sizeBytes":  46745592,
+                      "requiredAtStartup":  false,
+                      "description":  "Compressed JDK lib/modules payload for Android Agent rebuilds."
+                  },
+                  {
+                      "id":  "jdk-win-x64-lib-src",
+                      "version":  "temurin-11.0.14.1-src",
+                      "archive":  "vendor-packs/jdk-win-x64-lib-src.zip",
+                      "targetPath":  "third_party/jdk/win-x64",
+                      "keyFiles":  [
+                                       "lib/src.zip"
+                                   ],
+                      "groups":  [
+                                     "android-build"
+                                 ],
+                      "sha256":  "9ed1f7ac50bdab1bde1dee9354225c6fb5ee6720efb6a0f2e6b76a7b906b234c",
+                      "sizeBytes":  53206174,
+                      "requiredAtStartup":  false,
+                      "description":  "Compressed JDK src.zip payload for Android Agent rebuilds."
+                  },
+                  {
+                      "id":  "android-sdk-build-tools",
+                      "version":  "build-tools-36.1.0",
+                      "archive":  "vendor-packs/android-sdk-build-tools.zip",
+                      "targetPath":  "third_party/android/sdk",
+                      "keyFiles":  [
+                                       "build-tools/36.1.0/aapt2.exe",
+                                       "build-tools/36.1.0/d8.bat",
+                                       "build-tools/36.1.0/apksigner.bat",
+                                       "build-tools/36.1.0/zipalign.exe"
+                                   ],
+                      "groups":  [
+                                     "android-build"
+                                 ],
+                      "sha256":  "c6e7507be2655af8c45a1005db695d73df633cd6bffa2de6e633af165ee695bf",
+                      "sizeBytes":  59375159,
+                      "requiredAtStartup":  false,
+                      "description":  "Android SDK build-tools subset used only when rebuilding the Android Agent APK."
+                  },
+                  {
+                      "id":  "android-sdk-platforms",
+                      "version":  "platform-android-36",
+                      "archive":  "vendor-packs/android-sdk-platforms.zip",
+                      "targetPath":  "third_party/android/sdk",
+                      "keyFiles":  [
+                                       "platforms/android-36/android.jar",
+                                       "platforms/android-36/source.properties"
+                                   ],
+                      "groups":  [
+                                     "android-build"
+                                 ],
+                      "sha256":  "0ad513e33c79616345ee18a5715bf18fbdbcd39b8076ffc174962ef2aec6ef50",
+                      "sizeBytes":  66045023,
+                      "requiredAtStartup":  false,
+                      "description":  "Android SDK platform subset used only when rebuilding the Android Agent APK."
+                  },
+                  {
+                      "id":  "android-sdk-licenses",
+                      "version":  "android-sdk-licenses",
+                      "archive":  "vendor-packs/android-sdk-licenses.zip",
+                      "targetPath":  "third_party/android/sdk",
+                      "keyFiles":  [
+                                       "licenses/android-sdk-license"
+                                   ],
+                      "groups":  [
+                                     "android-build"
+                                 ],
+                      "sha256":  "f19a17c4dd360041975c6ded74fb852c7a5a14b6d0119848568fc2a525d761b9",
+                      "sizeBytes":  216,
+                      "requiredAtStartup":  false,
+                      "description":  "Android SDK licenses kept with the vendored Android build subset."
+                  }
+              ]
+}

@@ -13,7 +13,15 @@ const AGENT_HOST = process.env.AGENT_HOST || "127.0.0.1";
 const AGENT_PORT = Number(process.env.AGENT_PORT || 8123);
 const NODE_BIN = process.env.NODE_BIN || process.execPath;
 const AGENT_LOG = process.env.AGENT_LOG || "/tmp/weaknet-console-agent.log";
+const IS_WIN32 = process.platform === "win32";
+const POWERSHELL_EXE =
+  process.env.POWERSHELL ||
+  path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 const SERVER_JS = path.join(ROOT, "server.js");
+const WIN32_SERVICE_SCRIPT = path.join(ROOT, "windows-backend", "scripts", "run-weaknet-service.ps1");
+const WIN32_RUNTIME_DIR = path.join(ROOT, "windows-backend", "runtime");
+const WIN32_UI_RUNTIME_DIR = path.join(WIN32_RUNTIME_DIR, "ui");
+const WIN32_SHAPER_EXE = path.join(ROOT, "windows-backend", "dist", "win-x64", "Weaknet.WinDivertShaper.exe");
 const RUNTIME_PREFIX = path.join(os.tmpdir(), "weaknet-console-agent-");
 const THEME_PREF_FILE = process.env.WEAKNET_THEME_PREF_FILE || path.join(os.homedir(), ".weaknet-console-theme.json");
 const THEME_KEYS = new Set(["terminal-aurora", "cyber", "classic"]);
@@ -24,7 +32,6 @@ const SOURCE_SIGNATURE_ITEMS = [
   "styles.css",
   "server.js",
   "mac-unity-targets.json",
-  "drivers/win32/win32-driver.js",
 ];
 const SOURCE_SIGNATURE = createSourceSignature(ROOT);
 
@@ -215,7 +222,12 @@ async function getAgentStatus() {
 
   const admin = await requestJson(AGENT_PORT, "/api/admin/status");
   const adminData = admin.data || null;
-  const isRoot = Boolean(admin.ok && adminData && adminData.ok && adminData.mode === "root");
+  const isRoot = Boolean(
+    admin.ok &&
+      adminData &&
+      adminData.ok &&
+      (adminData.mode === "root" || adminData.mode === "windows-admin"),
+  );
   const agentSignature = health.data && health.data.sourceSignature ? health.data.sourceSignature : "";
   const stale = agentSignature !== SOURCE_SIGNATURE;
   return {
@@ -249,6 +261,105 @@ async function waitForAgentStopped(timeoutMs = 10000) {
   return latest;
 }
 
+function powershellSingleQuotedString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function buildWindowsElevatedServiceStartScript() {
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$powershell = ${powershellSingleQuotedString(POWERSHELL_EXE)}`,
+    `$serviceScript = ${powershellSingleQuotedString(WIN32_SERVICE_SCRIPT)}`,
+    `$arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serviceScript, '-Port', '${AGENT_PORT}', '-SourceSignature', ${powershellSingleQuotedString(SOURCE_SIGNATURE)})`,
+    "$process = Start-Process -FilePath $powershell -Verb RunAs -ArgumentList $arguments -Wait -PassThru",
+    "if ($null -ne $process -and $process.ExitCode -ne 0) { exit $process.ExitCode }",
+  ].join("; ");
+}
+
+async function stopAgentWithWindowsLauncher(body = {}) {
+  const before = await getAgentStatus();
+  if (!before.running) {
+    return { ok: true, alreadyStopped: true, agent: before, message: "本机弱网服务未运行" };
+  }
+
+  const stopResult = await requestJson(AGENT_PORT, "/api/service/stop", 15000, { method: "POST", body });
+  if (stopResult.ok && stopResult.data && stopResult.data.ok !== false) {
+    const agent = await waitForAgentStopped(15000);
+    return {
+      ok: !agent.running,
+      agent,
+      stop: stopResult.data,
+      message: agent.running ? "已请求停止服务，但 Agent 尚未退出" : "本机弱网服务已停止",
+    };
+  }
+
+  const killScript = [
+    `$connection = Get-NetTCPConnection -LocalPort ${AGENT_PORT} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
+    "if ($connection) {",
+    "  Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue",
+    "}",
+  ].join(" ");
+  const result = await run(POWERSHELL_EXE, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", killScript], 15000);
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.stderr.trim() || result.error || "Windows 弱网服务停止失败",
+      agent: before,
+    };
+  }
+
+  const agent = await waitForAgentStopped(15000);
+  return {
+    ok: !agent.running,
+    agent,
+    message: agent.running ? "停止命令已执行，但 Agent 尚未退出" : "本机弱网服务已停止",
+  };
+}
+
+async function startAgentWithWindowsLauncher() {
+  const before = await getAgentStatus();
+  if (before.ready) {
+    return { ok: true, alreadyRunning: true, agent: before };
+  }
+  if (before.running) {
+    await requestJson(AGENT_PORT, "/api/service/stop", 12000, { method: "POST", body: {} });
+    const stopped = await waitForAgentStopped(6000);
+    if (stopped.running) {
+      return {
+        ok: false,
+        error: "Windows weaknet service is still running on port 8123",
+        agent: stopped,
+      };
+    }
+  }
+
+  const result = await run(
+    POWERSHELL_EXE,
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", buildWindowsElevatedServiceStartScript()],
+    5 * 60 * 1000,
+  );
+  if (!result.ok) {
+    const raw = `${result.stderr}\n${result.stdout}\n${result.error}`;
+    const canceled = /canceled|cancelled|operation was canceled|operation cancelled|user/i.test(raw);
+    return {
+      ok: false,
+      canceled,
+      error: canceled ? "已取消 Windows 管理员授权" : result.stderr.trim() || result.error || "Windows weaknet service failed to start",
+      agent: before,
+    };
+  }
+
+  const agent = await waitForAgentReady(20000);
+  if (!agent.ready) {
+    return {
+      ok: false,
+      error: "Windows weaknet service did not become ready in time",
+      agent,
+    };
+  }
+  return { ok: true, agent };
+}
+
 async function buildAdminStartCommand({ stopExisting = false } = {}) {
   const adbBin = process.env.ADB || (await findExecutable("adb"));
   const runtime = prepareAgentRuntime();
@@ -274,6 +385,10 @@ async function buildAdminStartCommand({ stopExisting = false } = {}) {
 }
 
 async function startAgentWithAuthorization() {
+  if (IS_WIN32) {
+    return startAgentWithWindowsLauncher();
+  }
+
   const before = await getAgentStatus();
   if (before.ready) {
     return { ok: true, alreadyRunning: true, agent: before };
@@ -317,13 +432,17 @@ function buildAdminStopCommand() {
   ].join(" && ");
 }
 
-async function stopAgentWithAuthorization() {
+async function stopAgentWithAuthorization(body = {}) {
+  if (IS_WIN32) {
+    return stopAgentWithWindowsLauncher(body);
+  }
+
   const before = await getAgentStatus();
   if (!before.running) {
     return { ok: true, alreadyStopped: true, agent: before, message: "本机弱网服务未运行" };
   }
 
-  const stopResult = await requestJson(AGENT_PORT, "/api/service/stop", 15000, { method: "POST", body: {} });
+  const stopResult = await requestJson(AGENT_PORT, "/api/service/stop", 15000, { method: "POST", body });
   if (stopResult.ok && stopResult.data && stopResult.data.ok !== false) {
     const agent = await waitForAgentStopped();
     return {
@@ -409,12 +528,13 @@ const server = http.createServer(async (req, res) => {
 
   if (requestUrl.pathname === "/api/launcher/status") {
     const agent = await getAgentStatus();
-    sendJson(res, {
-      ok: true,
-      launcher: true,
-      host: HOST,
-      port: PORT,
-      agentHost: AGENT_HOST,
+      sendJson(res, {
+        ok: true,
+        launcher: true,
+        platform: process.platform,
+        host: HOST,
+        port: PORT,
+        agentHost: AGENT_HOST,
       agentPort: AGENT_PORT,
       agentUrl: `http://${AGENT_HOST}:${AGENT_PORT}/`,
       agent,
@@ -444,7 +564,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, { ok: false, error: "method not allowed" }, 405);
       return;
     }
-    const result = await stopAgentWithAuthorization();
+    const result = await stopAgentWithAuthorization(await readJsonBody(req));
     sendJson(res, result, result.ok ? 200 : result.canceled ? 409 : 500);
     return;
   }

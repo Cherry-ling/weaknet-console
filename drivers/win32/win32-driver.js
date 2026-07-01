@@ -117,6 +117,29 @@ function endpointFilters(targetEndpoint) {
   };
 }
 
+function buildAddressExpr(addresses = []) {
+  const validAddresses = [...new Set(addresses.map((value) => String(value || "").trim()).filter(isIpv4))];
+  if (!validAddresses.length) {
+    throw new Error("resolvedTargets must contain at least one IPv4 address");
+  }
+  return `ip and (${validAddresses.map((address) => `ip.SrcAddr == ${address} or ip.DstAddr == ${address}`).join(" or ")})`;
+}
+
+function resolvedTargetFilters(target = {}) {
+  const addressExpr = buildAddressExpr(target.addresses);
+  const port = target.port === null || target.port === undefined || target.port === "" ? null : Number(target.port);
+  if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    throw new Error("resolvedTargets port must be between 1 and 65535");
+  }
+  const portExpr = port
+    ? ` and (tcp.SrcPort == ${port} or tcp.DstPort == ${port} or udp.SrcPort == ${port} or udp.DstPort == ${port})`
+    : "";
+  return {
+    upload: `outbound and ${addressExpr}${portExpr}`,
+    download: `inbound and ${addressExpr}${portExpr}`,
+  };
+}
+
 function buildWin32WeaknetConfig(input = {}) {
   const targetScope = String(input.targetScope || "win-global");
   const profile = normalizeProfile(input.profile);
@@ -150,23 +173,44 @@ function buildWin32WeaknetConfig(input = {}) {
       filter: wrapFilter(ipFilter(deviceIp, "dst")),
     });
   } else if (targetScope === "win-target" || targetScope === "mac-unity") {
-    const filters = endpointFilters(input.targetEndpoint || input.targetApp);
-    rules.push({
-      name: "win-target-upload",
-      direction: "upload",
-      layer: "network",
-      filter: filters.upload,
-    });
-    rules.push({
-      name: "win-target-download",
-      direction: "download",
-      layer: "network",
-      filter: filters.download,
-    });
+    const resolvedTargets = Array.isArray(input.resolvedTargets) ? input.resolvedTargets : [];
+    if (resolvedTargets.length) {
+      resolvedTargets.forEach((target, index) => {
+        const filters = resolvedTargetFilters(target);
+        const suffix = index + 1;
+        rules.push({
+          name: `win-target-upload-${suffix}`,
+          direction: "upload",
+          layer: "network",
+          filter: filters.upload,
+        });
+        rules.push({
+          name: `win-target-download-${suffix}`,
+          direction: "download",
+          layer: "network",
+          filter: filters.download,
+        });
+      });
+    } else {
+      const filters = endpointFilters(input.targetEndpoint || input.targetApp);
+      rules.push({
+        name: "win-target-upload",
+        direction: "upload",
+        layer: "network",
+        filter: filters.upload,
+      });
+      rules.push({
+        name: "win-target-download",
+        direction: "download",
+        layer: "network",
+        filter: filters.download,
+      });
+    }
   } else if (targetScope === "android-socks") {
     const deviceIp = String(input.deviceIp || "").trim();
     const socksPort = Number(input.socksPort || 8124);
     const host = String(input.socksHost || input.winHost || "").trim();
+    if (!deviceIp || !isIpv4(deviceIp)) throw new Error("deviceIp is required for android-socks scope");
     if (!host) throw new Error("socksHost is required for android-socks scope");
     rules.push({
       name: "android-socks-upload",

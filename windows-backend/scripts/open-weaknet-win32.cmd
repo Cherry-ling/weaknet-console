@@ -2,36 +2,37 @@
 setlocal
 
 cd /d "%~dp0..\.."
+set "LAUNCHER_EXE=%CD%\WeakNetConsole.exe"
+set "LAUNCHER_SCRIPT=%CD%\windows-backend\scripts\run-weaknet-launcher.ps1"
 
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-  echo Opening Administrator command prompt...
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
-  exit /b
+if exist "%LAUNCHER_EXE%" (
+  start "" "%LAUNCHER_EXE%"
+  exit /b 0
 )
 
-set "SHAPER=%CD%\windows-backend\dist\win-x64\Weaknet.WinDivertShaper.exe"
-if exist "%SHAPER%" (
-  set "WEAKNET_WIN32_SHAPER=%SHAPER%"
-) else (
-  echo Windows backend package was not found:
-  echo %SHAPER%
+echo Starting Weaknet Launcher on http://127.0.0.1:8122
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -File "%LAUNCHER_SCRIPT%"
+
+set "LAUNCHER_READY="
+for /L %%i in (1,1,30) do (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8122/api/launcher/status' -TimeoutSec 2; if ($r.ok) { exit 0 } else { exit 1 } } catch { exit 1 }"
+  if not errorlevel 1 (
+    set "LAUNCHER_READY=1"
+    goto launcher_ready
+  )
+  timeout /t 1 /nobreak >nul
+)
+
+:launcher_ready
+if not defined LAUNCHER_READY (
   echo.
-  echo Run windows-backend\scripts\build-win32-package.ps1 first.
-  echo The service can still use a development publish if one exists.
-)
-
-where node >nul 2>&1
-if errorlevel 1 (
-  echo Node.js was not found. This script packages .NET/WinDivert, but the current console UI still needs Node.js to run server.js.
+  echo Weaknet Launcher failed to become ready on http://127.0.0.1:8122
+  echo Review windows-backend\runtime\weaknet-launcher.out.log and weaknet-launcher.err.log, then press any key to close this window.
   pause
   exit /b 1
 )
 
-echo Starting Weaknet Console Agent on http://127.0.0.1:8123
-start "" "http://127.0.0.1:8123"
-node server.js
+start "" "http://127.0.0.1:8122/"
 
-echo.
-echo Weaknet Console Agent stopped.
-pause
+exit /b 0

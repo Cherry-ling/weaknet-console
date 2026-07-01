@@ -151,6 +151,7 @@ const launcherConfig = {
   port: "8122",
   agentPort: "8123",
 };
+const LAUNCHER_FETCH_TIMEOUT_MS = 12000;
 
 const THEME_STORAGE_KEY = "weaknet-theme";
 const THEMES = [
@@ -231,6 +232,7 @@ const state = {
   launcher: {
     status: null,
     starting: false,
+    autoStartHandled: false,
   },
   serviceStopped: false,
 };
@@ -535,6 +537,14 @@ function getLauncherUrl(path = "/") {
   return `${location.protocol}//${host}:${launcherConfig.port}${path}`;
 }
 
+function getLauncherAction() {
+  try {
+    return new URLSearchParams(location.search).get("action") || "";
+  } catch {
+    return "";
+  }
+}
+
 function isAgentConnectionFailure(error) {
   return /failed to fetch|load failed|networkerror|network request failed/i.test(String((error && error.message) || error || ""));
 }
@@ -651,6 +661,12 @@ async function getLauncherStatus() {
   const status = await fetchLauncherJson("/api/launcher/status");
   state.launcher.status = status;
   if (status.agentPort) launcherConfig.agentPort = String(status.agentPort);
+  const launcherPlatform =
+    status.platform ||
+    (status.agent && status.agent.health && status.agent.health.platform) ||
+    (status.agent && status.agent.admin && status.agent.admin.platform) ||
+    "";
+  if (launcherPlatform) state.agent.platform = launcherPlatform;
   return status;
 }
 
@@ -685,8 +701,17 @@ async function refreshLauncherGate() {
   try {
     const status = await getLauncherStatus();
     renderLauncherStatus(status);
+    if (isWindowsAgent() && elements.launcherMessage && !(status.agent && status.agent.ready)) {
+      elements.launcherMessage.textContent =
+        "为实现真实弱网环境，本工具需要临时启动管理员权限的本机弱网服务。点击授权后，Windows 会弹出管理员权限确认框。";
+    }
     if (status.agent && status.agent.ready) {
       setTimeout(() => redirectToAgent(status), 450);
+      return true;
+    }
+    if (getLauncherAction() === "restart" && !state.launcher.autoStartHandled && !state.launcher.starting) {
+      state.launcher.autoStartHandled = true;
+      setTimeout(() => startLauncherAgent(), 250);
     }
   } catch (error) {
     if (elements.launcherMessage) elements.launcherMessage.textContent = "启动页服务异常，请重新打开 open-weaknet.command。";
@@ -710,8 +735,18 @@ async function startLauncherAgent() {
   setLauncherBusy(true);
   if (elements.launcherMessage) elements.launcherMessage.textContent = "等待 macOS 系统授权框，请输入本机登录密码。";
   setLauncherStatus("正在请求管理员授权", "info");
+  if (elements.launcherMessage && isWindowsAgent()) {
+    elements.launcherMessage.textContent = "等待 Windows 管理员权限确认框，请点击“是”。";
+  }
   try {
-    const result = await fetchLauncherJson("/api/launcher/start", { method: "POST" });
+    const startRequest = fetchLauncherJson("/api/launcher/start", { method: "POST" });
+    if (isWindowsAgent()) {
+      startRequest.catch(() => null);
+      const status = await waitForLauncherAgentReady();
+      setTimeout(() => redirectToAgent(status), 450);
+      return;
+    }
+    const result = await startRequest;
     state.launcher.status = result;
     if (result.agentPort) launcherConfig.agentPort = String(result.agentPort);
     if (result.agent && result.agent.ready) {
@@ -1016,7 +1051,16 @@ function formatEffectSummary(profile) {
 function getRecordTarget(record = {}) {
   if (record.networkMode === "Mac 全局弱网") return "整台 Mac 外网流量";
   if (record.networkMode === "Windows 全局弱网") return "整台 Windows 外网流量";
-  if (record.targetApp && record.targetApp !== "未填写") return record.targetApp;
+
+  const targetApp = String(record.targetApp || "").trim();
+  if (targetApp && targetApp !== "未填写") {
+    const rows = splitTargetList(targetApp).map(parseGatewayTarget);
+    const hosts = new Set(rows.map((row) => row.host).filter(Boolean));
+    const ports = new Set(rows.map((row) => row.port).filter(Boolean));
+    if (rows.length > 1) return `${hosts.size} 个 host / ${ports.size} 个 port`;
+    return targetApp;
+  }
+
   if (record.deviceIp && record.deviceIp !== "未填写") return record.deviceIp;
   return "未选择目标";
 }
@@ -1118,14 +1162,19 @@ function getApplyOperationDoneMessage(profile) {
 }
 
 function setCurrentEffectFromRecord(record, profile, tone = "ok") {
+  const modeLabel = record.networkMode || getNetworkModeLabel();
+  const targetLabel = getRecordTarget(record);
+  const isGlobalRecord = modeLabel === "Mac 全局弱网" || modeLabel === "Windows 全局弱网";
+  const targetMeta = isGlobalRecord ? targetLabel : `${modeLabel} · ${targetLabel}`;
+
   if (isNetworkWaveProfile(profile)) {
     setCurrentEffect({
       tone,
       title: "网络波动 已生效",
-      meta: `${record.networkMode || getNetworkModeLabel()} · ${NETWORK_WAVE_MODE.scene}`,
+      meta: `${modeLabel} · ${NETWORK_WAVE_MODE.scene}`,
       profile: { ...profile },
-      modeLabel: record.networkMode || getNetworkModeLabel(),
-      target: getRecordTarget(record),
+      modeLabel,
+      target: targetLabel,
       chips: NETWORK_WAVE_MODE.chips,
     });
     return;
@@ -1136,18 +1185,18 @@ function setCurrentEffectFromRecord(record, profile, tone = "ok") {
       title: "正常网络",
       meta: "未施加弱网",
       profile: null,
-      modeLabel: record.networkMode || getNetworkModeLabel(),
-      target: getRecordTarget(record),
+      modeLabel,
+      target: targetLabel,
     });
     return;
   }
   setCurrentEffect({
     tone,
     title: `${profile.displayNameZh} 已生效`,
-    meta: `${record.networkMode || getNetworkModeLabel()} · ${getRecordTarget(record)}`,
+    meta: targetMeta,
     profile: { ...profile },
-    modeLabel: record.networkMode || getNetworkModeLabel(),
-    target: getRecordTarget(record),
+    modeLabel,
+    target: targetLabel,
   });
 }
 
@@ -1271,14 +1320,19 @@ function getMacUnityGatewayRows() {
 function getGatewaySummary(rows = getMacUnityGatewayRows()) {
   const hosts = new Set(rows.map((row) => row.host));
   const ports = new Set(rows.map((row) => row.port).filter(Boolean));
-  return `Mac Unity · ${hosts.size} hosts · ${ports.size} ports`;
+  return `${isWindowsAgent() ? "Windows Target" : "Mac Unity"} · ${hosts.size} hosts · ${ports.size} ports`;
 }
 
 function getGatewayStateMeta(rows = getMacUnityGatewayRows()) {
   if (!rows.length) {
     return { label: "未配置", className: "empty" };
   }
-  const active = Boolean(state.networkCurve.limitProfile && state.networkCurve.limitMode !== "normal");
+  const currentMode = getNetworkModeLabel();
+  const effect = state.currentEffect || {};
+  const active = Boolean(
+    (state.networkCurve.limitProfile && state.networkCurve.limitMode !== "normal") ||
+      (effect.profile && effect.modeLabel === currentMode),
+  );
   return active ? { label: "已生效", className: "active" } : { label: "待下发", className: "pending" };
 }
 
@@ -1337,6 +1391,9 @@ function renderGatewayScope() {
   const collapsedRows = rows.slice(0, 3);
   const expandedRows = rows.slice(0, 5);
 
+  if (elements.gatewayScopeTitle) {
+    elements.gatewayScopeTitle.textContent = isWindowsAgent() ? "受限目标" : "受限网关";
+  }
   elements.gatewaySummary.textContent = summary;
   if (elements.gatewayDialogSummary) elements.gatewayDialogSummary.textContent = summary;
   if (elements.gatewayState) {
@@ -1666,7 +1723,7 @@ function renderDeviceModeSummary() {
         ["当前规则", getModeRuleState(modeLabel)],
       ]
     : [
-        ["覆盖范围", isWindowsAgent() ? "指定 IPv4 / 端口" : "Unity 业务 / CDN / SDK"],
+        ["覆盖范围", isWindowsAgent() ? "内置真实业务目标" : "Unity 业务 / CDN / SDK"],
         ["目标来源", state.agent.macUnityTargets.length ? "内置目标" : getMacUnityTargetEndpoint() ? "手动输入" : "等待配置"],
         ["受限目标", state.agent.macUnityTargets.length ? `${state.agent.macUnityTargets.length} 个目标` : getMacUnityTargetEndpoint() ? "已填写" : "未配置"],
         ["当前规则", getModeRuleState(modeLabel)],
@@ -1698,40 +1755,46 @@ function assertMacUnityTargetReady(profile) {
   if (!isMacUnityMode() || profile.presetKey === "normal") return;
   const target = getMacUnityTargetsForRequest();
   if (!target) {
-    throw new Error(isWindowsAgent() ? "Windows 目标弱网需要填写 IPv4 或 IPv4:端口" : "Mac Unity 真实断网仿真需要内置目标；请确认 mac-unity-targets.json 已配置 host:port");
+    throw new Error(
+      isWindowsAgent()
+        ? "Windows 目标弱网需要内置目标，或手动填写 host:port / IPv4:port"
+        : "Mac Unity 真实断网仿真需要内置目标；请确认 mac-unity-targets.json 已配置 host:port",
+    );
   }
 }
 
 async function loadMacUnityBuiltinTargets(fillInput = false) {
   if (!isLikelyLocalAgent()) return [];
-  if (isWindowsAgent()) {
-    state.agent.macUnityTargets = [];
-    renderDeviceModeSummary();
-    renderGatewayScope();
-    renderCommandPreview();
-    return [];
-  }
   try {
     const data = await fetchAgentJson("/api/mac-unity/targets");
     const targets = Array.isArray(data.targets) ? data.targets.filter(Boolean) : [];
     state.agent.macUnityTargets = targets;
     if (fillInput && targets.length) {
       const current = getMacUnityTargetEndpoint();
-      if (!current || current === "com.example.game" || current.startsWith("整台 Mac 外网")) {
+      if (!current || current === "com.example.game" || current.startsWith("整台 ")) {
         elements.targetApp.value = targets.join(", ");
       }
-      elements.deviceNote.textContent = "已使用内置 Mac Unity 目标；完整目标见受限网关。";
+      if (elements.deviceNote) {
+        elements.deviceNote.textContent = isWindowsAgent()
+          ? "已使用内置真实业务目标；Windows 目标弱网会自动解析 host:port 并复用这份列表。"
+          : "已使用内置 Mac Unity 目标；完整目标见受限网关。";
+      }
     } else if (fillInput) {
-      elements.deviceNote.textContent = "Mac Unity 内置目标尚未配置；请在 mac-unity-targets.json 填写三个 host:port。";
+      if (elements.deviceNote) {
+        elements.deviceNote.textContent = isWindowsAgent()
+          ? "Windows 目标弱网内置目标尚未配置；请在 mac-unity-targets.json 填写 host:port。"
+          : "Mac Unity 内置目标尚未配置；请在 mac-unity-targets.json 填写三个 host:port。";
+      }
     }
     renderDeviceModeSummary();
     renderGatewayScope();
     renderCommandPreview();
     return targets;
   } catch (error) {
-    if (fillInput) {
+    if (fillInput && elements.deviceNote) {
       elements.deviceNote.textContent = `读取 Mac Unity 内置目标失败：${error.message}`;
     }
+    state.agent.macUnityTargets = [];
     renderDeviceModeSummary();
     renderGatewayScope();
     return [];
@@ -1778,7 +1841,10 @@ function describeAndroidVpnStatus(data) {
   if (!data.installed) return "Android VPN Agent 尚未安装";
   const status = data.status || {};
   if (status.mode === "blackhole" && status.running) {
-    return `Android VPN 100% 丢包生效：${status.targetPackage || "目标应用"}`;
+    const packets = Number(status.blackholePacketCount || 0);
+    const bytes = Number(status.blackholeByteCount || 0);
+    const hitSummary = packets > 0 ? `，已命中 ${packets} 个包 / ${bytes} bytes` : "，尚未观测到真实业务流量命中";
+    return `Android VPN 100% 丢包生效：${status.targetPackage || "目标应用"}${hitSummary}`;
   }
   if (status.mode === "socks" && status.running) {
     if (data.macSocks && !data.macSocks.active) {
@@ -3626,6 +3692,9 @@ async function applyAndroidVpnProfile(record, profile) {
   elements.deviceNote.textContent = data.message || describeAndroidVpnStatus(data.status);
   rememberNetworkCurveLimit(profile, data.mode || "android-vpn");
   setCurrentEffectFromRecord(record, profile, "ok");
+  renderConsoleSummaries();
+  renderDeviceModeSummary();
+  renderGatewayScope();
   updateOperationFromSteps({
     tone: "ok",
     title: getApplyOperationDoneTitle(profile),
@@ -3666,6 +3735,9 @@ async function applyProfile() {
       elements.runtimeMode.textContent = "准备失败";
       elements.deviceNote.textContent = error.message;
       const readable = getReadableError(error);
+      renderConsoleSummaries();
+      renderDeviceModeSummary();
+      renderGatewayScope();
       updateOperationFromSteps({
         tone: "error",
         title: "准备失败",
@@ -3886,6 +3958,9 @@ async function applyProfile() {
       elements.deviceNote.textContent = data.message || `${record.displayNameZh} 已下发到 ${record.deviceIp}`;
     }
     setCurrentEffectFromRecord(record, profile, "ok");
+    renderConsoleSummaries();
+    renderDeviceModeSummary();
+    renderGatewayScope();
     updateOperationFromSteps({
       tone: "ok",
       title: getApplyOperationDoneTitle(profile),
@@ -3964,8 +4039,10 @@ async function clearWeakNet() {
         message: "手机端弱网规则已清理。",
         steps: data.steps,
       });
-      disableNetworkWaveAfterClear();
+      renderConsoleSummaries();
+      renderDeviceModeSummary();
       renderGatewayScope();
+      disableNetworkWaveAfterClear();
       showToast("已恢复正常网络 · Android VPN 已停止", "success");
       await refreshAndroidVpnStatus(false);
     } catch (error) {
@@ -4017,8 +4094,10 @@ async function clearWeakNet() {
       message: "弱网规则已清理。",
       steps: data.steps,
     });
-    disableNetworkWaveAfterClear();
+    renderConsoleSummaries();
+    renderDeviceModeSummary();
     renderGatewayScope();
+    disableNetworkWaveAfterClear();
     showToast("已恢复正常网络", "success");
   } catch (error) {
     if (handleServiceStoppedError(error)) {
@@ -4074,8 +4153,12 @@ async function stopService() {
 
   try {
     const payload = { serial: isAndroidVpnMode() ? state.agent.selectedSerial || "" : "" };
-    const data = isLauncherPage()
-      ? await fetchLauncherJson("/api/launcher/stop", { method: "POST" })
+    const data = isLauncherPage() || isWindowsAgent()
+      ? await fetchLauncherJson("/api/launcher/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
       : await postAgentJson("/api/service/stop", payload);
     stopped = true;
     stopNetworkCurve();
@@ -4116,6 +4199,11 @@ async function stopService() {
 async function restartService() {
   if (!isLikelyLocalAgent()) {
     showToast("请重新打开弱网控制台.app启动服务。", "error", { duration: 6200 });
+    return;
+  }
+
+  if (isWindowsAgent() && !isLauncherPage()) {
+    window.location.replace(getLauncherUrl("/?action=restart"));
     return;
   }
 

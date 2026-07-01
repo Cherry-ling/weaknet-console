@@ -137,6 +137,7 @@ internal static class Program
             Ok = ok,
             Mode = config.Mode,
             ProcessId = Environment.ProcessId,
+            StartedAt = runtime.StartedAt,
             UpdatedAt = DateTimeOffset.UtcNow,
             Profile = runtime.Current,
             Rules = workers.ToDictionary(worker => worker.Name, worker => worker.Snapshot()),

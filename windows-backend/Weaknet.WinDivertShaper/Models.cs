@@ -195,6 +195,7 @@ internal sealed class StatusSnapshot
     public bool Ok { get; set; }
     public string Mode { get; set; } = "";
     public int ProcessId { get; set; }
+    public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public WeaknetProfile Profile { get; set; } = new();
     public Dictionary<string, RuleStatsSnapshot> Rules { get; set; } = new();

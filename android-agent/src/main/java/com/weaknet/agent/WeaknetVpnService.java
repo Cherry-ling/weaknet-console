@@ -41,6 +41,9 @@ public class WeaknetVpnService extends VpnService {
   private volatile boolean packetDropRunning;
   private volatile boolean tproxyRunning;
   private volatile int tproxyMonitorGeneration;
+  private volatile long blackholePacketCount;
+  private volatile long blackholeByteCount;
+  private volatile long blackholeLastHitAt;
   private String lastStatus = "";
 
   @Override
@@ -58,7 +61,7 @@ public class WeaknetVpnService extends VpnService {
       return START_STICKY;
     }
 
-    updateStatus(false, "idle", "", "", "等待 Mac 控制台下发弱网预设；请不要在系统 VPN 设置中开启“始终开启的 VPN”。", "");
+    updateStatus(false, "idle", "", "", "等待弱网控制台下发弱网预设；请不要在系统 VPN 设置中开启“始终开启的 VPN”。", "");
     return START_NOT_STICKY;
   }
 
@@ -111,13 +114,14 @@ public class WeaknetVpnService extends VpnService {
       false,
       "unsupported",
       profile,
-      "当前预设需要 Mac 控制台提供 SOCKS 出口后才能启动。",
+      "当前预设需要弱网控制台提供 SOCKS 出口后才能启动。",
       ""
     );
   }
 
   private void startBlackhole(Profile profile) {
     closeVpnInterface();
+    resetBlackholeStats();
 
     try {
       Builder builder = new Builder()
@@ -147,7 +151,7 @@ public class WeaknetVpnService extends VpnService {
         return;
       }
 
-      startPacketDropper(vpnInterface);
+      startPacketDropper(vpnInterface, profile);
       ensureForeground("正在对 " + profile.targetPackage + " 执行 100% 丢包");
       updateStatus(
         true,
@@ -167,15 +171,25 @@ public class WeaknetVpnService extends VpnService {
     }
   }
 
-  private void startPacketDropper(ParcelFileDescriptor descriptor) {
+  private void startPacketDropper(ParcelFileDescriptor descriptor, final Profile profile) {
     packetDropRunning = true;
     packetDropThread = new Thread(new Runnable() {
       @Override
       public void run() {
         byte[] buffer = new byte[32767];
+        long lastReportedAt = 0L;
         try (FileInputStream input = new FileInputStream(descriptor.getFileDescriptor())) {
-          while (packetDropRunning && input.read(buffer) >= 0) {
-            // Intentionally discard every packet to simulate 100% loss.
+          while (packetDropRunning) {
+            int read = input.read(buffer);
+            if (read < 0) break;
+            if (read == 0) continue;
+            blackholePacketCount += 1;
+            blackholeByteCount += read;
+            blackholeLastHitAt = System.currentTimeMillis();
+            if (blackholePacketCount == 1 || blackholePacketCount % 64 == 0 || blackholeLastHitAt - lastReportedAt >= 1000) {
+              updateStatus(true, "blackhole", profile, "Blackhole captured target traffic.", "");
+              lastReportedAt = blackholeLastHitAt;
+            }
           }
         } catch (IOException ignored) {
           // Closing the VPN descriptor interrupts the blocking read.
@@ -232,7 +246,7 @@ public class WeaknetVpnService extends VpnService {
         true,
         "socks",
         profile,
-        "已通过 Mac SOCKS 出口开启弱网：" + profile.displayName + "。",
+        "已通过 SOCKS 出口开启弱网：" + profile.displayName + "。",
         ""
       );
       startTProxyMonitor(profile);
@@ -278,7 +292,7 @@ public class WeaknetVpnService extends VpnService {
             true,
             "socks",
             profile,
-            "已通过 Mac SOCKS 出口开启弱网：" + profile.displayName + "。",
+            "已通过 SOCKS 出口开启弱网：" + profile.displayName + "。",
             ""
           );
           try {
@@ -320,6 +334,12 @@ public class WeaknetVpnService extends VpnService {
     packetDropThread = null;
     tproxyThread = null;
     tproxyMonitorThread = null;
+  }
+
+  private void resetBlackholeStats() {
+    blackholePacketCount = 0L;
+    blackholeByteCount = 0L;
+    blackholeLastHitAt = 0L;
   }
 
   private void ensureForeground(String text) {
@@ -415,6 +435,9 @@ public class WeaknetVpnService extends VpnService {
         + "\"socksHost\":\"" + escapeJson(socksHost) + "\","
         + "\"socksPort\":" + socksPort + ","
         + "\"socksUdpMode\":\"" + escapeJson(socksUdpMode) + "\","
+        + "\"blackholePacketCount\":" + blackholePacketCount + ","
+        + "\"blackholeByteCount\":" + blackholeByteCount + ","
+        + "\"blackholeLastHitAt\":" + blackholeLastHitAt + ","
         + "\"message\":\"" + escapeJson(message) + "\","
         + "\"error\":\"" + escapeJson(error) + "\","
         + "\"tproxyStats\":" + getTProxyStatsJson() + ","

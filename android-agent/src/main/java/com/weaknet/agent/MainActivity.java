@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     title.setIncludeFontPadding(false);
     titleColumn.addView(title, blockParams(0, 0, 0, 7));
 
-    TextView subtitle = text("由 Mac 控制台控制", 14, MUTED, Typeface.NORMAL);
+    TextView subtitle = text("由弱网控制台控制", 14, MUTED, Typeface.NORMAL);
     titleColumn.addView(subtitle);
     header.addView(titleColumn, titleParams);
 
@@ -302,7 +302,7 @@ public class MainActivity extends Activity {
       if (permissionGranted) {
         return StatusSnapshot.local("idle", "VPN 权限已授权，但 VPN 还没有启动。", true);
       }
-      return StatusSnapshot.local("needs_permission", "暂无状态。请先授权 VPN，然后在 Mac 控制台下发一个弱网预设。", false);
+      return StatusSnapshot.local("needs_permission", "暂无状态。请先授权 VPN，然后在弱网控制台下发一个弱网预设。", false);
     }
     try (FileInputStream input = new FileInputStream(file)) {
       byte[] bytes = new byte[(int) file.length()];
@@ -312,7 +312,7 @@ public class MainActivity extends Activity {
       if ("needs_permission".equals(snapshot.mode) && permissionGranted) {
         snapshot.mode = "idle";
         snapshot.running = false;
-        snapshot.message = "上一次下发停在未授权状态；现在请回到 Mac 控制台再次点击“应用预设”。";
+        snapshot.message = "上一次下发停在未授权状态；现在请回到弱网控制台再次点击“应用预设”。";
       }
       return snapshot;
     } catch (IOException error) {
@@ -351,7 +351,7 @@ public class MainActivity extends Activity {
   private void configureNotice(StatusSnapshot snapshot) {
     if ("needs_permission".equals(snapshot.mode)) {
       noticeTitle.setText("先完成一次 VPN 授权");
-      noticeBody.setText("授权后回到 Mac 控制台再次点击“应用预设”。不要在系统 VPN 设置中开启“始终开启的 VPN”。");
+      noticeBody.setText("授权后回到弱网控制台再次点击“应用预设”。不要在系统 VPN 设置中开启“始终开启的 VPN”。");
       return;
     }
     noticeTitle.setText("不要开启系统“始终开启的 VPN”");
@@ -415,7 +415,7 @@ public class MainActivity extends Activity {
     addDiagnosticRow("presetKey", firstNonEmpty(snapshot.presetKey, "none"));
     addDiagnosticRow("targetPackage", firstNonEmpty(snapshot.targetPackage, "none"));
     if (!isEmpty(snapshot.socksHost) || snapshot.socksPort > 0) {
-      addDiagnosticRow("Mac SOCKS", firstNonEmpty(snapshot.socksHost, "unknown") + ":" + snapshot.socksPort);
+      addDiagnosticRow("SOCKS 出口", firstNonEmpty(snapshot.socksHost, "unknown") + ":" + snapshot.socksPort);
     }
     if (!isEmpty(snapshot.tproxyStats)) addDiagnosticRow("tproxyStats", snapshot.tproxyStats);
     if (!isEmpty(snapshot.error)) addDiagnosticRow("error", snapshot.error);
@@ -455,7 +455,7 @@ public class MainActivity extends Activity {
     if ("error".equals(snapshot.mode)) return "启动失败";
     if ("needs_permission".equals(snapshot.mode)) return "需要 VPN 授权";
     if ("unsupported".equals(snapshot.mode)) return "预设暂不支持";
-    if ("idle".equals(snapshot.mode)) return "等待 Mac 控制台";
+    if ("idle".equals(snapshot.mode)) return "等待弱网控制台";
     if ("normal".equals(snapshot.mode)) return "正常网络";
     if (snapshot.running) return formatPreset(snapshot);
     return "未开启弱网";
@@ -465,10 +465,10 @@ public class MainActivity extends Activity {
     if ("error".equals(snapshot.mode)) return firstNonEmpty(snapshot.message, snapshot.error, "弱网代理启动失败。");
     if ("needs_permission".equals(snapshot.mode)) return "请先完成一次系统 VPN 授权。";
     if ("unsupported".equals(snapshot.mode)) return firstNonEmpty(snapshot.message, "当前预设暂不支持 Android VPN Agent。");
-    if ("socks".equals(snapshot.mode) && snapshot.running) return "通过 Mac SOCKS 出口接管目标应用流量。";
+    if ("socks".equals(snapshot.mode) && snapshot.running) return "通过 SOCKS 出口接管目标应用流量。";
     if ("blackhole".equals(snapshot.mode) && snapshot.running) return "目标应用流量已被直接丢弃。";
     if ("normal".equals(snapshot.mode)) return firstNonEmpty(snapshot.message, "手机端弱网已停止，目标应用恢复正常网络。");
-    if ("idle".equals(snapshot.mode)) return firstNonEmpty(snapshot.message, "请在 Mac 控制台选择目标包名和弱网预设。");
+    if ("idle".equals(snapshot.mode)) return firstNonEmpty(snapshot.message, "请在弱网控制台选择目标包名和弱网预设。");
     return firstNonEmpty(snapshot.message, snapshot.running ? "弱网代理正在运行。" : "弱网代理未运行。");
   }
 
@@ -483,21 +483,21 @@ public class MainActivity extends Activity {
   }
 
   private String getLinkText(StatusSnapshot snapshot) {
-    if ("socks".equals(snapshot.mode)) return "Android VPN > Mac SOCKS > 弱网规则";
+    if ("socks".equals(snapshot.mode)) return "Android VPN > SOCKS 出口 > 弱网规则";
     if ("blackhole".equals(snapshot.mode)) return "Android VPN > 直接丢包";
-    if ("needs_permission".equals(snapshot.mode)) return "系统授权 > Mac 控制台";
+    if ("needs_permission".equals(snapshot.mode)) return "系统授权 > 弱网控制台";
     if ("error".equals(snapshot.mode)) return "Android Agent > 错误";
-    return "Mac 控制台 > Android Agent";
+    return "弱网控制台 > Android Agent";
   }
 
   private String getNextStep(StatusSnapshot snapshot) {
-    if ("needs_permission".equals(snapshot.mode)) return "下一步：点击“授权 VPN”，同意系统弹窗后回到 Mac 控制台重新应用预设。";
-    if ("idle".equals(snapshot.mode)) return "下一步：回到 Mac 控制台选择目标包名和弱网预设，然后点击“应用预设”。";
-    if ("socks".equals(snapshot.mode) && snapshot.running) return "当前弱网已生效。若游戏无网络，请回到 Mac 控制台重新应用预设，并检查 SOCKS 计数与 tun0 流量。";
-    if ("blackhole".equals(snapshot.mode) && snapshot.running) return "当前为 100% 丢包，只会影响目标应用。结束测试后建议回到 Mac 控制台清除弱网。";
+    if ("needs_permission".equals(snapshot.mode)) return "下一步：点击“授权 VPN”，同意系统弹窗后回到弱网控制台重新应用预设。";
+    if ("idle".equals(snapshot.mode)) return "下一步：回到弱网控制台选择目标包名和弱网预设，然后点击“应用预设”。";
+    if ("socks".equals(snapshot.mode) && snapshot.running) return "当前弱网已生效。若游戏无网络，请回到弱网控制台重新应用预设，并检查 SOCKS 计数与 tun0 流量。";
+    if ("blackhole".equals(snapshot.mode) && snapshot.running) return "当前为 100% 丢包，只会影响目标应用。结束测试后建议回到弱网控制台清除弱网。";
     if ("error".equals(snapshot.mode)) return "下一步：先刷新状态；若仍失败，请展开诊断详情查看错误和最近日志。";
-    if ("normal".equals(snapshot.mode)) return "当前手机端弱网已停止。需要继续测试时，请回到 Mac 控制台重新下发预设。";
-    return "请以 Mac 控制台为准下发或清除弱网。";
+    if ("normal".equals(snapshot.mode)) return "当前手机端弱网已停止。需要继续测试时，请回到弱网控制台重新下发预设。";
+    return "请以弱网控制台为准下发或清除弱网。";
   }
 
   private int getAccent(StatusSnapshot snapshot) {
@@ -701,6 +701,9 @@ public class MainActivity extends Activity {
     String error = "";
     String socksHost = "";
     int socksPort;
+    long blackholePacketCount;
+    long blackholeByteCount;
+    long blackholeLastHitAt;
     String tproxyStats = "";
     String tproxyLogTail = "";
     long updatedAt;
@@ -729,6 +732,9 @@ public class MainActivity extends Activity {
         snapshot.error = optString(status, "error");
         snapshot.socksHost = optString(status, "socksHost");
         snapshot.socksPort = status.optInt("socksPort", 0);
+        snapshot.blackholePacketCount = status.optLong("blackholePacketCount", 0L);
+        snapshot.blackholeByteCount = status.optLong("blackholeByteCount", 0L);
+        snapshot.blackholeLastHitAt = status.optLong("blackholeLastHitAt", 0L);
         Object stats = status.opt("tproxyStats");
         snapshot.tproxyStats = stats == null ? "" : String.valueOf(stats);
         snapshot.tproxyLogTail = optString(status, "tproxyLogTail");

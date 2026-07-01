@@ -3687,7 +3687,7 @@ body.console-layout .monitor-tab.active {
 }
 
 body.console-layout .current-effect-strip {
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  grid-template-columns: minmax(0, 1fr);
   padding: 14px 16px;
   overflow: hidden;
   border-color: rgba(97, 216, 125, 0.34);
@@ -3695,8 +3695,15 @@ body.console-layout .current-effect-strip {
   background: rgba(97, 216, 125, 0.07);
 }
 
+body.console-layout .current-effect-strip > :first-child {
+  min-width: 0;
+}
+
 body.console-layout .current-effect-strip > p {
   min-width: 0;
+  width: 100%;
+  max-width: none;
+  overflow-wrap: anywhere;
 }
 
 body.console-layout .current-effect-chips {
@@ -3707,9 +3714,11 @@ body.console-layout .current-effect-chips {
 }
 
 body.console-layout .current-effect-chips span {
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body.console-layout .current-effect-strip strong {
