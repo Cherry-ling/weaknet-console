@@ -4198,7 +4198,7 @@ async function stopService() {
 
 async function restartService() {
   if (!isLikelyLocalAgent()) {
-    showToast("请重新打开弱网控制台.app启动服务。", "error", { duration: 6200 });
+    showToast("请重新打开 WeakNetConsole.app 启动服务。", "error", { duration: 6200 });
     return;
   }
 
@@ -4229,7 +4229,7 @@ async function restartService() {
     setTimeout(() => redirectToAgent(status), 300);
   } catch (error) {
     state.serviceStopped = true;
-    const message = "无法自动重启服务，请重新打开弱网控制台.app重新启动服务。";
+    const message = "无法自动重启服务，请重新打开 WeakNetConsole.app 重新启动服务。";
     elements.runtimeMode.textContent = "重启失败";
     elements.deviceNote.textContent = message;
     updateOperationFromSteps({
