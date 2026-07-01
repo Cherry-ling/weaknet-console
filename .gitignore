@@ -16,8 +16,11 @@ windows-backend/launcher-dist/
 # Generated vendor state and unpacked runtimes
 .vendor-state/
 third_party/node/win-x64/
+third_party/node/darwin-arm64/
+third_party/node/darwin-x64/
 third_party/jdk/win-x64/
 third_party/android/platform-tools/
+third_party/android/platform-tools-darwin/
 third_party/android/sdk/
 windows-backend/dist/win-x64/
 

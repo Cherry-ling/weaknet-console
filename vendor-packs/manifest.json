@@ -163,6 +163,57 @@
                       "sizeBytes":  216,
                       "requiredAtStartup":  false,
                       "description":  "Android SDK licenses kept with the vendored Android build subset."
+                  },
+                  {
+                      "id":  "node-darwin-arm64-runtime",
+                      "version":  "node-v26.4.0",
+                      "archive":  "vendor-packs/node-darwin-arm64-runtime.zip",
+                      "targetPath":  "third_party/node/darwin-arm64",
+                      "keyFiles":  [
+                                       "bin/node"
+                                   ],
+                      "groups":  [
+                                     "macos-runtime",
+                                     "macos-launcher"
+                                 ],
+                      "sha256":  "7f389c216e5b00e2f9e54e5eb6c1def4baff428813f6f17e47c5b29d73cd4783",
+                      "sizeBytes":  60636513,
+                      "requiredAtStartup":  true,
+                      "description":  "Vendored Node.js runtime for Apple Silicon macOS launchers and services."
+                  },
+                  {
+                      "id":  "node-darwin-x64-runtime",
+                      "version":  "node-v26.4.0",
+                      "archive":  "vendor-packs/node-darwin-x64-runtime.zip",
+                      "targetPath":  "third_party/node/darwin-x64",
+                      "keyFiles":  [
+                                       "bin/node"
+                                   ],
+                      "groups":  [
+                                     "macos-runtime",
+                                     "macos-launcher"
+                                 ],
+                      "sha256":  "5ca8e35257caf190ddd7acd072808bc2aafa3e9839eef962bee2a9e2e2d78c38",
+                      "sizeBytes":  61964392,
+                      "requiredAtStartup":  true,
+                      "description":  "Vendored Node.js runtime for Intel macOS launchers and services."
+                  },
+                  {
+                      "id":  "android-platform-tools-darwin",
+                      "version":  "platform-tools-37.0.0",
+                      "archive":  "vendor-packs/android-platform-tools-darwin.zip",
+                      "targetPath":  "third_party/android/platform-tools-darwin",
+                      "keyFiles":  [
+                                       "platform-tools/adb"
+                                   ],
+                      "groups":  [
+                                     "macos-runtime",
+                                     "macos-android-runtime"
+                                 ],
+                      "sha256":  "094a1395683c509fd4d48667da0d8b5ef4d42b2abfcd29f2e8149e2f989357c7",
+                      "sizeBytes":  16442240,
+                      "requiredAtStartup":  true,
+                      "description":  "Vendored Android platform-tools for macOS Android device control."
                   }
               ]
 }

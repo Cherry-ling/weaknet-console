@@ -15,13 +15,22 @@ on run
 		display alert "无法找到弱网工具目录" message "请确认 weaknet-console 仍在：" & return & toolDir as critical
 		return
 	end if
+	set runtimeWarnings to my ensureMacRuntimePacks(toolDir)
 	
 	set progress completed steps to 1
 	set progress additional description to "检查 Node.js 环境..."
-	set nodeBin to my findNode()
+	set nodeBin to my findNode(toolDir)
+	if nodeBin starts with "__WEAKNET_NODE_ERROR__" then
+		set nodeMessage to text ((length of "__WEAKNET_NODE_ERROR__") + 1) thru -1 of nodeBin
+		display alert "内置 Node.js 准备失败" message nodeMessage & return & return & "请确认 vendor-packs 内的 macOS Node 压缩包完整，或安装系统 Node.js 后重试。" as critical
+		return
+	end if
 	if nodeBin is "" then
 		display alert "未找到 Node.js" message "请先安装 Node.js，或确认 nvm/Homebrew 的 node 可用。" as critical
 		return
+	end if
+	if runtimeWarnings is not "" then
+		display alert "内置 Android 工具准备失败" message runtimeWarnings & return & return & "控制台会继续启动，但 Android VPN 功能可能不可用。" as warning
 	end if
 	
 	set progress completed steps to 2
@@ -61,18 +70,81 @@ on fileExists(posixPath)
 	end try
 end fileExists
 
-on findNode()
+on ensureMacRuntimePacks(toolDir)
 	set scriptText to "
-set -e
+	set +e
+	tool_dir=" & quoted form of toolDir & "
+	adb_target=\"$tool_dir/third_party/android/platform-tools-darwin\"
+	adb_key=\"$adb_target/platform-tools/adb\"
+	adb_pack=\"$tool_dir/vendor-packs/android-platform-tools-darwin.zip\"
+	if [ -x \"$adb_key\" ] && ! \"$adb_key\" version >/dev/null 2>&1; then
+	  /bin/rm -f \"$adb_key\"
+	fi
+	if [ ! -x \"$adb_key\" ] && [ -f \"$adb_pack\" ]; then
+	  /bin/mkdir -p \"$adb_target\"
+	  unzip_out=\"$(/usr/bin/unzip -oq \"$adb_pack\" -d \"$adb_target\" 2>&1)\"
+	  unzip_status=$?
+	  /bin/chmod +x \"$adb_key\" 2>/dev/null || true
+	  if [ $unzip_status -ne 0 ] || [ ! -x \"$adb_key\" ]; then
+	    printf '内置 adb 解压失败：%s' \"$adb_pack\"
+	    if [ -n \"$unzip_out\" ]; then printf '\n%s' \"$unzip_out\"; fi
+	  fi
+	elif [ ! -x \"$adb_key\" ] && [ ! -f \"$adb_pack\" ]; then
+	  printf '缺少内置 adb 包：%s' \"$adb_pack\"
+	fi
+	"
+	try
+		return do shell script "/bin/zsh -lc " & quoted form of scriptText
+	on error errorMessage
+		return errorMessage
+	end try
+end ensureMacRuntimePacks
+
+on findNode(toolDir)
+	set scriptText to "
+	set +e
+	tool_dir=" & quoted form of toolDir & "
+	arch=\"$(/usr/bin/uname -m)\"
+	node_issue=\"\"
+	case \"$arch\" in
+	  arm64) node_target=\"$tool_dir/third_party/node/darwin-arm64\"; node_pack=\"$tool_dir/vendor-packs/node-darwin-arm64-runtime.zip\" ;;
+	  x86_64) node_target=\"$tool_dir/third_party/node/darwin-x64\"; node_pack=\"$tool_dir/vendor-packs/node-darwin-x64-runtime.zip\" ;;
+  *) node_target=\"\"; node_pack=\"\" ;;
+esac
+	if [ -n \"$node_target\" ]; then
+	  node_key=\"$node_target/bin/node\"
+	  if [ -x \"$node_key\" ] && ! \"$node_key\" --version >/dev/null 2>&1; then
+	    /bin/rm -f \"$node_key\"
+	  fi
+	  if [ ! -x \"$node_key\" ] && [ -f \"$node_pack\" ]; then
+	    /bin/mkdir -p \"$node_target\"
+	    unzip_out=\"$(/usr/bin/unzip -oq \"$node_pack\" -d \"$node_target\" 2>&1)\"
+	    unzip_status=$?
+	    /bin/chmod +x \"$node_key\" 2>/dev/null || true
+	    if [ $unzip_status -ne 0 ] || [ ! -x \"$node_key\" ]; then
+	      node_issue=\"内置 Node.js 解压失败：$node_pack\"
+	      if [ -n \"$unzip_out\" ]; then node_issue=\"$node_issue
+$unzip_out\"; fi
+	    fi
+	  elif [ ! -x \"$node_key\" ] && [ ! -f \"$node_pack\" ]; then
+	    node_issue=\"缺少当前架构的内置 Node.js 包：$node_pack\"
+	  fi
+	  if [ -x \"$node_key\" ]; then
+	    printf '%s' \"$node_key\"
+    exit 0
+  fi
+fi
 export PATH=\"/opt/homebrew/bin:/usr/local/bin:$HOME/.nvm/versions/node/v22.22.2/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH\"
 node_bin=\"$(command -v node || true)\"
 if [ -z \"$node_bin\" ] && [ -d \"$HOME/.nvm/versions/node\" ]; then
   node_bin=\"$(find \"$HOME/.nvm/versions/node\" -path '*/bin/node' -type f 2>/dev/null | sort | tail -1 || true)\"
 fi
-if [ -n \"$node_bin\" ]; then
-  printf '%s' \"$node_bin\"
-fi
-"
+	if [ -n \"$node_bin\" ]; then
+	  printf '%s' \"$node_bin\"
+	elif [ -n \"$node_issue\" ]; then
+	  printf '__WEAKNET_NODE_ERROR__%s' \"$node_issue\"
+	fi
+	"
 	try
 		return do shell script "/bin/zsh -lc " & quoted form of scriptText
 	on error

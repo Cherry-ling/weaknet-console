@@ -115,6 +115,11 @@ const mimeTypes = {
 
 function resolveAdbBinary() {
   if (process.env.ADB) return process.env.ADB;
+  if (HOST_PLATFORM === "darwin") {
+    const vendoredAdb = path.join(ROOT, "third_party", "android", "platform-tools-darwin", "platform-tools", "adb");
+    if (fs.existsSync(vendoredAdb)) return vendoredAdb;
+    return "adb";
+  }
   if (!IS_WIN32) return "adb";
 
   const vendoredAdb = path.join(ROOT, "third_party", "android", "platform-tools", "adb.exe");

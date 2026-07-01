@@ -144,6 +144,15 @@ async function findExecutable(name) {
   return result.stdout.trim();
 }
 
+async function resolveAgentAdbBinary() {
+  if (process.env.ADB) return process.env.ADB;
+  if (process.platform === "darwin") {
+    const vendoredAdb = path.join(ROOT, "third_party", "android", "platform-tools-darwin", "platform-tools", "adb");
+    if (fs.existsSync(vendoredAdb)) return vendoredAdb;
+  }
+  return findExecutable("adb");
+}
+
 function prepareAgentRuntime() {
   const runtimeRoot = fs.mkdtempSync(RUNTIME_PREFIX);
   for (const item of RUNTIME_ITEMS) {
@@ -361,7 +370,7 @@ async function startAgentWithWindowsLauncher() {
 }
 
 async function buildAdminStartCommand({ stopExisting = false } = {}) {
-  const adbBin = process.env.ADB || (await findExecutable("adb"));
+  const adbBin = await resolveAgentAdbBinary();
   const runtime = prepareAgentRuntime();
   const envParts = [`HOST=${shellQuote(AGENT_HOST)}`, `PORT=${shellQuote(String(AGENT_PORT))}`];
   if (adbBin) envParts.push(`ADB=${shellQuote(adbBin)}`);
