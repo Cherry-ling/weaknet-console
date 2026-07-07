@@ -207,6 +207,7 @@ const state = {
     timerId: null,
     limitProfile: null,
     limitMode: "normal",
+    androidLast: null,
   },
   networkWave: {
     enabled: false,
@@ -321,6 +322,11 @@ const elements = {
   modeTriggerTip: document.getElementById("modeTriggerTip"),
   modeTriggerTipBubble: document.getElementById("modeTriggerTipBubble"),
   modeList: document.getElementById("modeList"),
+  modeCardPicker: document.getElementById("modeCardPicker"),
+  modeCardCurrent: document.getElementById("modeCardCurrent"),
+  modeCardCurrentIcon: document.getElementById("modeCardCurrentIcon"),
+  modeCardCurrentTitle: document.getElementById("modeCardCurrentTitle"),
+  modeCardCurrentDescription: document.getElementById("modeCardCurrentDescription"),
   modeCardList: document.getElementById("modeCardList"),
   runtimeMode: document.getElementById("runtimeMode"),
   topCurrentSummary: document.getElementById("topCurrentSummary"),
@@ -956,7 +962,19 @@ function getNetworkMode() {
 }
 
 function isAndroidVpnMode() {
+  return isAndroidHostVpnMode() || isAndroidLocalMode();
+}
+
+function isAndroidHostVpnMode() {
   return getNetworkMode() === "android-vpn";
+}
+
+function isAndroidLocalMode() {
+  return getNetworkMode() === "android-local";
+}
+
+function getAndroidDataplane() {
+  return isAndroidLocalMode() ? "android-local" : "host-socks";
 }
 
 function isMacUnityMode() {
@@ -972,7 +990,8 @@ function isMacLocalMode() {
 }
 
 function getNetworkModeLabel() {
-  if (isAndroidVpnMode()) return "Android VPN Agent";
+  if (isAndroidLocalMode()) return "Android VPN 本地弱网";
+  if (isAndroidHostVpnMode()) return "Mac真机下发";
   if (isMacGlobalMode()) return `${getHostLabel()} 全局弱网`;
   if (isMacUnityMode()) return isWindowsAgent() ? "Windows 目标弱网" : "Mac Unity 真实断网仿真";
   return `${getGatewayHostLabel()} 网关`;
@@ -1491,11 +1510,19 @@ function getModeUiMeta(mode) {
   const map = {
     "android-vpn": {
       icon: "AD",
-      name: "Android VPN Agent",
-      title: "Android VPN",
+      name: "Mac真机下发",
+      title: "Mac真机下发",
       description: "通过 ADB + SOCKS，对目标包名生效",
       tip:
         `底层逻辑：通过手机端 VPN Agent 接管 Android 指定包名流量，普通弱网经 ${host} SOCKS + ${windows ? "WinDivert" : "pf/dnctl"}，100% 丢包在手机端直接阻断。使用方法：连接 Android 设备，填写目标包名，必要时先安装 Agent 并授权 VPN，再应用预设。`,
+    },
+    "android-local": {
+      icon: "AL",
+      name: "Android VPN 本地弱网",
+      title: "Android 本地",
+      description: "手机端 VPN 本地执行弱网",
+      tip:
+        "底层逻辑：通过手机端 VPN Agent 接管 Android 指定包名流量，并在 APK 内本地施加延迟、抖动、限速、丢包和断续；Windows/mac 只负责安装、下发和读状态。使用方法：连接 Android 设备，填写目标包名，必要时先安装 Agent 并授权 VPN，再应用预设。",
     },
     macos: {
       icon: "GW",
@@ -1587,6 +1614,13 @@ function updateModeListUi() {
     elements.modeTriggerTip.setAttribute("aria-label", `${meta.name} 说明`);
     elements.modeTriggerTipBubble.textContent = meta.tip;
   }
+  if (elements.modeCardCurrent) {
+    const meta = getModeUiMeta(mode);
+    if (elements.modeCardCurrentIcon) elements.modeCardCurrentIcon.textContent = meta.icon;
+    if (elements.modeCardCurrentTitle) elements.modeCardCurrentTitle.textContent = meta.title;
+    if (elements.modeCardCurrentDescription) elements.modeCardCurrentDescription.textContent = meta.description;
+    elements.modeCardCurrent.setAttribute("aria-label", `当前模式：${meta.name}。点击展开模式列表`);
+  }
 }
 
 function setModeListOpen(open) {
@@ -1598,6 +1632,17 @@ function setModeListOpen(open) {
 function toggleModeList() {
   if (!elements.modeList) return;
   setModeListOpen(elements.modeList.hidden);
+}
+
+function setModeCardListOpen(open) {
+  if (!elements.modeCardList || !elements.modeCardCurrent) return;
+  elements.modeCardList.hidden = !open;
+  elements.modeCardCurrent.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function toggleModeCardList() {
+  if (!elements.modeCardList) return;
+  setModeCardListOpen(elements.modeCardList.hidden);
 }
 
 function setNetworkMode(mode) {
@@ -1666,10 +1711,10 @@ function updateNetworkModeUi() {
     renderDeviceModeNote();
   } else {
     const targetValue = elements.targetApp.value.trim();
-    if (isAndroidVpnMode() && (targetValue.startsWith("整台 ") || targetValue.includes(":") || targetValue.includes(","))) {
-      elements.targetApp.value = "com.example.game";
+    if (isAndroidVpnMode() && (targetValue === "com.example.game" || targetValue.startsWith("整台 ") || targetValue.includes(":") || targetValue.includes(","))) {
+      elements.targetApp.value = "";
     } else if (elements.targetApp.value.startsWith("整台 ")) {
-      elements.targetApp.value = isAndroidVpnMode() ? "com.example.game" : "";
+      elements.targetApp.value = "";
     }
     elements.targetApp.disabled = false;
     elements.targetApp.placeholder = isAndroidVpnMode() ? "例如 com.ffm.global" : "例如 com.example.game";
@@ -1691,8 +1736,10 @@ function renderDeviceModeNote() {
     elements.deviceNote.textContent = isWindowsAgent()
       ? "Windows 目标弱网会限制指定 IPv4 或 IPv4:端口 的流量；域名目标会在后续接 DNS 解析。"
       : "Mac Unity 真实断网仿真会限制 Unity 业务/CDN/SDK 相关目标；完整目标见受限网关。";
-  } else if (isAndroidVpnMode()) {
-    elements.deviceNote.textContent = "Android VPN Agent 模式会在手机端按目标包名接管流量；先选择设备和包名，再应用预设。";
+  } else if (isAndroidLocalMode()) {
+    elements.deviceNote.textContent = "Android 本地弱网会在手机 Agent 内执行延迟、抖动、限速、丢包和断续；电脑只负责安装、下发和读取状态。";
+  } else if (isAndroidHostVpnMode()) {
+    elements.deviceNote.textContent = `Android VPN Agent 模式会在手机端按目标包名接管流量，并通过 ${getHostLabel()} SOCKS 出口施加弱网。`;
   } else if (getNetworkMode() === "macos") {
     elements.deviceNote.textContent = `${getGatewayHostLabel()} 网关模式按设备 IP 控制经过 ${getHostLabel()} 的测试机流量。`;
   }
@@ -1805,7 +1852,7 @@ function isValidAndroidPackageName(value) {
   return /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(String(value || "").trim());
 }
 
-function getAndroidVpnProfileSupport(profile) {
+function getAndroidVpnProfileSupport(profile, dataplane = getAndroidDataplane()) {
   if (profile.presetKey === "normal") {
     return {
       supported: true,
@@ -1827,6 +1874,21 @@ function getAndroidVpnProfileSupport(profile) {
     };
   }
 
+  if (dataplane === "android-local") {
+    if (isNetworkWaveProfile(profile)) {
+      return {
+        supported: false,
+        mode: "unsupported",
+        message: "Android 本地弱网暂不支持网络波动模式；请关闭网络波动，或切回 Mac真机下发模式。",
+      };
+    }
+    return {
+      supported: true,
+      mode: "local",
+      message: "Android VPN Agent 将在手机本地执行该弱网预设",
+    };
+  }
+
   return {
     supported: true,
     mode: "socks",
@@ -1840,17 +1902,37 @@ function describeAndroidVpnStatus(data) {
   if (!data) return "Android VPN Agent 状态未知";
   if (!data.installed) return "Android VPN Agent 尚未安装";
   const status = data.status || {};
+  const targetLabel = getAndroidStatusTargetLabel(status);
+  const hostCleanup = data.hostCleanup || null;
+  if (hostCleanup && hostCleanup.cleaned) {
+    return hostCleanup.message || "手机端已清除，电脑端 Mac真机下发残留已自动清理";
+  }
+  if (hostCleanup && hostCleanup.attempted && !hostCleanup.ok) {
+    return hostCleanup.message || "手机端已清除，但电脑端 Mac真机下发残留清理失败";
+  }
+  if (hostCleanup && (hostCleanup.inProgress || hostCleanup.throttled)) {
+    return hostCleanup.message || "Mac真机下发残留正在清理";
+  }
   if (status.mode === "blackhole" && status.running) {
     const packets = Number(status.blackholePacketCount || 0);
     const bytes = Number(status.blackholeByteCount || 0);
     const hitSummary = packets > 0 ? `，已命中 ${packets} 个包 / ${bytes} bytes` : "，尚未观测到真实业务流量命中";
-    return `Android VPN 100% 丢包生效：${status.targetPackage || "目标应用"}${hitSummary}`;
+    return `Android VPN 100% 丢包生效：${targetLabel}${hitSummary}`;
   }
   if (status.mode === "socks" && status.running) {
     if (data.macSocks && !data.macSocks.active) {
       return `Android VPN 已运行，但${getHostLabel()} SOCKS 出口未运行；请重新点击应用预设`;
     }
-    return `Android VPN 弱网生效：${status.targetPackage || "目标应用"}`;
+    return `Android VPN 弱网生效：${targetLabel}`;
+  }
+  if (status.mode === "local" && status.running) {
+    const localStats = status.localStats || {};
+    const tunStats = status.tunStats || {};
+    const hitStats = Object.keys(tunStats).length ? tunStats : localStats;
+    const tcp = Number(localStats.tcpActive || 0);
+    const dropped = Number(hitStats.droppedPackets || 0);
+    const shaper = Object.keys(tunStats).length ? "TUN 包级" : "SOCKS";
+    return `Android 本地弱网生效：${targetLabel}，${shaper}，TCP ${tcp}，丢弃 ${dropped}`;
   }
   if (status.mode === "needs_permission") {
     return "Android VPN Agent 等待手机端 VPN 授权";
@@ -1860,6 +1942,70 @@ function describeAndroidVpnStatus(data) {
   }
   if (status.message) return `Android VPN Agent：${status.message}`;
   return data.running ? "Android VPN Agent 运行中" : "Android VPN Agent 已安装";
+}
+
+function getAndroidStatusTargetLabel(status = {}) {
+  if (status.targetScope === "global") return "整机流量";
+  return status.targetPackage || "目标应用";
+}
+
+function isAndroidPhoneClearedData(data) {
+  const status = data && data.status ? data.status : null;
+  return Boolean(status && !status.running && (status.mode === "normal" || status.mode === "idle"));
+}
+
+function syncAndroidClearedStateFromStatus(data, previousAndroidVpn) {
+  if (!isAndroidVpnMode() || !isAndroidPhoneClearedData(data)) return;
+
+  const previousStatus = previousAndroidVpn && previousAndroidVpn.status ? previousAndroidVpn.status : null;
+  const wasRunning = Boolean(previousStatus && previousStatus.running);
+  const hostCleanup = data.hostCleanup || null;
+  const hostCleanupAttempted = Boolean(hostCleanup && (hostCleanup.attempted || hostCleanup.cleaned));
+  const hostCleanupPending = Boolean(hostCleanup && (hostCleanup.inProgress || hostCleanup.throttled));
+  const hostCleanupFailed = Boolean(hostCleanup && hostCleanup.attempted && !hostCleanup.ok);
+  if (!wasRunning && !hostCleanupAttempted && !hostCleanupPending) return;
+
+  const tone = hostCleanupFailed || hostCleanupPending ? "warn" : "ok";
+  const target = getAndroidStatusTargetLabel((data && data.status) || previousStatus || {});
+  const message =
+    hostCleanup && hostCleanup.message
+      ? hostCleanup.message
+      : wasRunning
+        ? "手机端已清除，电脑端状态已同步为正常网络"
+        : "Android VPN Agent 已恢复正常网络";
+
+  if (state.selectedKey !== "normal") {
+    selectPreset("normal");
+  }
+  elements.runtimeMode.textContent = hostCleanupFailed ? "清理异常" : hostCleanupPending ? "清理中" : "正常网络";
+  elements.deviceNote.textContent = message;
+  rememberNetworkCurveLimit(null, "normal");
+  resetAndroidNetworkCurveBaseline();
+  setCurrentEffect({
+    tone,
+    title: hostCleanupFailed ? "清理异常" : "正常网络",
+    meta: hostCleanupFailed ? "手机端已恢复，电脑端 Mac真机下发残留清理失败" : "手机端已恢复正常网络",
+    profile: null,
+    modeLabel: getNetworkModeLabel(),
+    target,
+  });
+  renderConsoleSummaries();
+  renderDeviceModeSummary();
+  renderGatewayScope();
+  disableNetworkWaveAfterClear();
+
+  updateOperationFromSteps({
+    tone,
+    title: hostCleanupFailed ? "宿主残留清理失败" : hostCleanupPending ? "宿主残留清理中" : "已同步清除",
+    message,
+    steps: hostCleanup && hostCleanup.steps ? hostCleanup.steps : [],
+  });
+
+  if (hostCleanup && hostCleanup.cleaned) {
+    showToast("手机端已清除，电脑端残留已自动清理", "success", { duration: 3600 });
+  } else if (wasRunning && !hostCleanupFailed && !hostCleanupPending) {
+    showToast("手机端已清除，电脑端已同步为正常网络", "success", { duration: 3200 });
+  }
 }
 
 async function ensureAndroidDeviceSelected() {
@@ -1886,7 +2032,7 @@ async function ensureAndroidVpnReady(profile) {
   }
   const targetPackage = elements.targetApp.value.trim();
   if (profile.presetKey !== "normal" && !isValidAndroidPackageName(targetPackage)) {
-    throw new Error("Android VPN 模式需要填写有效的目标应用包名，例如 com.example.game");
+    throw new Error("Android VPN 模式需要填写真实已安装的目标应用包名，例如 com.ffm.global；也可以先点击“读取前台应用”。");
   }
   return device;
 }
@@ -2043,12 +2189,17 @@ async function refreshDevices() {
   }
 }
 
-async function refreshAndroidVpnStatus(announce = false) {
+async function refreshAndroidVpnStatus(announce = false, options = {}) {
   if (!isLikelyLocalAgent() || !state.agent.selectedSerial) return null;
   const params = new URLSearchParams({ serial: state.agent.selectedSerial });
   try {
     const data = await fetchAgentJson(`/api/android-vpn/status?${params.toString()}`);
+    const previousAndroidVpn = state.agent.androidVpn;
     state.agent.androidVpn = data;
+    syncAndroidClearedStateFromStatus(data, previousAndroidVpn);
+    if (isAndroidLocalMode() && options.updateCurve !== false) {
+      pushAndroidNetworkCurvePoint(data);
+    }
     const message = describeAndroidVpnStatus(data);
     if (isAndroidVpnMode()) {
       elements.deviceNote.textContent = message;
@@ -2070,7 +2221,7 @@ async function installAndroidVpnAgentFromUi() {
     const device = await ensureAndroidDeviceSelected();
     elements.runtimeMode.textContent = "安装 Agent";
     showToast("开始安装 Android VPN Agent", "info");
-    const data = await postAgentJson("/api/android-vpn/install", { serial: device.serial });
+    const data = await postAgentJson("/api/android-vpn/install", { serial: device.serial, theme: state.theme });
     showWeaknetStepToasts(data.steps);
     showToast(data.message || "Android VPN Agent 已安装", "success");
     await refreshAndroidVpnStatus(true);
@@ -2089,7 +2240,7 @@ async function authorizeAndroidVpnFromUi() {
     const device = await ensureAndroidDeviceSelected();
     elements.runtimeMode.textContent = "等待 VPN 授权";
     showToast("打开 Android VPN 授权页", "info");
-    const data = await postAgentJson("/api/android-vpn/authorize", { serial: device.serial });
+    const data = await postAgentJson("/api/android-vpn/authorize", { serial: device.serial, theme: state.theme });
     showWeaknetStepToasts(data.steps);
     elements.deviceNote.textContent = data.message || "已打开手机端授权页";
     showToast(data.message || "已打开手机端授权页", "success", { duration: 7000 });
@@ -2680,9 +2831,85 @@ function getNetworkCurveTimestamp(timestamp = Date.now()) {
   return new Date(timestamp).toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function getProfileLimitKbps(profile, field) {
   const value = Number(profile && profile[field]);
   return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function resetAndroidNetworkCurveBaseline() {
+  state.networkCurve.androidLast = null;
+}
+
+function buildAndroidNetworkCurvePoint(data) {
+  const status = data && data.status ? data.status : null;
+  const timestamp = toFiniteNumber(status && status.updatedAt, Date.now());
+  if (!status) {
+    resetAndroidNetworkCurveBaseline();
+    return {
+      ok: Boolean(data && data.ok),
+      active: false,
+      blocked: false,
+      timestamp,
+      downKbps: 0,
+      upKbps: 0,
+      mode: "android-agent",
+      source: "android-agent",
+    };
+  }
+
+  const mode = status.mode || "unknown";
+  const running = Boolean(status.running);
+  let upBytes = 0;
+  let downBytes = 0;
+  let droppedPackets = 0;
+  let blockedPackets = 0;
+
+  if (mode === "local") {
+    const stats = status.tunStats || status.localStats || {};
+    upBytes = toFiniteNumber(stats.uploadBytes);
+    downBytes = toFiniteNumber(stats.downloadBytes);
+    droppedPackets = toFiniteNumber(stats.droppedPackets);
+    blockedPackets = toFiniteNumber(stats.blockedPackets);
+  } else if (mode === "blackhole") {
+    upBytes = toFiniteNumber(status.blackholeByteCount);
+    droppedPackets = toFiniteNumber(status.blackholePacketCount);
+    blockedPackets = droppedPackets;
+  }
+
+  const key = `${state.agent.selectedSerial || ""}|${status.targetPackage || ""}|${mode}`;
+  const previous = state.networkCurve.androidLast;
+  const current = { key, timestamp, upBytes, downBytes };
+  state.networkCurve.androidLast = current;
+
+  let upKbps = 0;
+  let downKbps = 0;
+  if (running && previous && previous.key === key && timestamp > previous.timestamp) {
+    const seconds = Math.max(0.001, (timestamp - previous.timestamp) / 1000);
+    downKbps = Math.max(0, ((downBytes - previous.downBytes) * 8) / seconds / 1000);
+    upKbps = Math.max(0, ((upBytes - previous.upBytes) * 8) / seconds / 1000);
+  }
+
+  return {
+    ok: data.ok !== false,
+    active: running,
+    blocked: running && mode === "blackhole",
+    timestamp,
+    downKbps,
+    upKbps,
+    droppedPackets,
+    blockedPackets,
+    mode: `android-${mode}`,
+    source: "android-agent",
+  };
+}
+
+function pushAndroidNetworkCurvePoint(data) {
+  pushNetworkCurvePoint(buildAndroidNetworkCurvePoint(data));
 }
 
 function isNetworkCurveProfileBlocked(profile) {
@@ -2739,14 +2966,19 @@ function pushNetworkCurvePoint(status) {
   const localBlocked = localProfile && isNetworkCurveProfileBlocked(localProfile);
   const localWave = localProfile && isNetworkWaveProfile(localProfile);
   const blocked = Boolean(status.blocked || localBlocked);
-  const downKbps = blocked
+  const androidAgent = status.source === "android-agent";
+  const downKbps = androidAgent
+    ? Math.max(0, Number(status.downKbps || 0))
+    : blocked
     ? 0
     : localProfile && !localWave
       ? getProfileLimitKbps(localProfile, "downloadKbps")
       : localWave
         ? Math.max(0, Number(status.downKbps || getProfileLimitKbps(localProfile, "downloadKbps") || 0))
         : Math.max(0, Number(status.downKbps || 0));
-  const upKbps = blocked
+  const upKbps = androidAgent
+    ? Math.max(0, Number(status.upKbps || 0))
+    : blocked
     ? 0
     : localProfile && !localWave
       ? getProfileLimitKbps(localProfile, "uploadKbps")
@@ -2770,6 +3002,8 @@ function pushNetworkCurvePoint(status) {
     elements.networkCurveStatus.textContent = "采集异常";
   } else if (blocked) {
     elements.networkCurveStatus.textContent = "阻断中";
+  } else if (androidAgent && active) {
+    elements.networkCurveStatus.textContent = "Android 采集中";
   } else if (active) {
     elements.networkCurveStatus.textContent = status.jitter || localWave ? "波动中" : "限制生效";
   } else {
@@ -2935,6 +3169,26 @@ function drawNetworkCurveChart() {
 
 function startNetworkCurve() {
   if (state.networkCurve.eventSource || state.networkCurve.timerId) return;
+  if (isAndroidLocalMode()) {
+    if (!isLikelyLocalAgent()) {
+      elements.networkCurveStatus.textContent = "未连接";
+      drawNetworkCurveChart();
+      return;
+    }
+    resetAndroidNetworkCurveBaseline();
+    const pollAndroidStatus = async () => {
+      if (!isAndroidLocalMode()) return;
+      if (!state.agent.selectedSerial) {
+        elements.networkCurveStatus.textContent = "等待设备";
+        drawNetworkCurveChart();
+        return;
+      }
+      await refreshAndroidVpnStatus(false);
+    };
+    pollAndroidStatus();
+    state.networkCurve.timerId = window.setInterval(pollAndroidStatus, 1200);
+    return;
+  }
   if (!isLikelyLocalAgent()) {
     elements.networkCurveStatus.textContent = "未连接";
     drawNetworkCurveChart();
@@ -2958,6 +3212,12 @@ function stopNetworkCurve() {
   }
   window.clearInterval(state.networkCurve.timerId);
   state.networkCurve.timerId = null;
+  resetAndroidNetworkCurveBaseline();
+}
+
+function restartNetworkCurve() {
+  stopNetworkCurve();
+  startNetworkCurve();
 }
 
 function setMonitorTab() {
@@ -3226,12 +3486,14 @@ function renderWindowsCommandPreview(profile, deviceIp, targetEndpoint) {
 function renderCommandPreview() {
   const profile = getProfileForApply();
   const deviceIp = elements.deviceIp.value.trim() || "192.168.2.12";
-  const targetPackage = elements.targetApp.value.trim() || "com.example.game";
+  const targetPackage = elements.targetApp.value.trim() || "<target-package>";
   const serial = state.agent.selectedSerial || "<device_serial>";
 
   if (elements.commandEyebrow) {
     elements.commandEyebrow.textContent = isAndroidVpnMode()
-      ? "Android VPN Agent"
+      ? isAndroidLocalMode()
+        ? "Android Local"
+        : "Android VPN Agent"
       : isMacGlobalMode()
         ? isWindowsAgent()
           ? "Windows Global"
@@ -3263,6 +3525,20 @@ function renderCommandPreview() {
       `# ${support.message}`,
       "# 可切换到 macOS 网关，或选择“100% 丢包”验证目标包断网行为",
       ].join("\n");
+      return;
+    }
+
+    if (support.mode === "local") {
+      const lines = [
+        `# ${profile.displayNameZh}：Android VPN 本地弱网`,
+        `# serial=${serial}`,
+        `# target_package=${targetPackage}`,
+        "# dataplane=android-local；Windows/mac 只负责安装 APK、ADB 下发和读取 status",
+        "# APK 内部启动本地 SOCKS shaper，经手机 VPN 对目标包名施加延迟/丢包/限速/断续",
+        `adb -s ${serial} shell am broadcast -n com.weaknet.agent/.CommandReceiver -a com.weaknet.agent.APPLY --es profileBase64 '<profile-json-with-dataplane-android-local>' --es targetPackage ${targetPackage}`,
+      ];
+      pushNetworkWaveCommandNotes(lines, profile);
+      elements.commandPreview.textContent = lines.join("\n");
       return;
     }
 
@@ -3669,8 +3945,9 @@ function pushHistory(record) {
 }
 
 async function applyAndroidVpnProfile(record, profile) {
-  elements.runtimeMode.textContent = "Android VPN 下发中";
-  elements.deviceNote.textContent = `正在通过 Android VPN Agent 下发 ${record.displayNameZh}...`;
+  const dataplane = getAndroidDataplane();
+  elements.runtimeMode.textContent = isAndroidLocalMode() ? "Android 本地弱网下发中" : "Android VPN 下发中";
+  elements.deviceNote.textContent = `正在通过 ${getNetworkModeLabel()} 下发 ${record.displayNameZh}...`;
   setOperationStatus({
     tone: "info",
     title: getApplyOperationStartTitle(profile),
@@ -3680,7 +3957,9 @@ async function applyAndroidVpnProfile(record, profile) {
 
   const data = await postAgentJson("/api/android-vpn/apply", {
     serial: state.agent.selectedSerial,
-    profile,
+    dataplane,
+    theme: state.theme,
+    profile: { ...profile, dataplane },
     targetApp: record.targetApp,
     deviceIp: record.deviceIp,
   });
@@ -3691,6 +3970,10 @@ async function applyAndroidVpnProfile(record, profile) {
   elements.runtimeMode.textContent = isNormal ? "正常网络" : `${record.displayNameZh} 已生效`;
   elements.deviceNote.textContent = data.message || describeAndroidVpnStatus(data.status);
   rememberNetworkCurveLimit(profile, data.mode || "android-vpn");
+  if (isAndroidLocalMode()) {
+    restartNetworkCurve();
+    if (data.status) pushAndroidNetworkCurvePoint(data.status);
+  }
   setCurrentEffectFromRecord(record, profile, "ok");
   renderConsoleSummaries();
   renderDeviceModeSummary();
@@ -4020,7 +4303,7 @@ async function clearWeakNet() {
         message: "正在清理手机端弱网规则。",
         steps: [],
       });
-      const data = await postAgentJson("/api/android-vpn/clear", { serial: device.serial });
+      const data = await postAgentJson("/api/android-vpn/clear", { serial: device.serial, dataplane: getAndroidDataplane(), theme: state.theme });
       state.agent.androidVpn = data.status || state.agent.androidVpn;
       elements.runtimeMode.textContent = "正常网络";
       elements.deviceNote.textContent = data.message || describeAndroidVpnStatus(data.status);
@@ -4030,7 +4313,7 @@ async function clearWeakNet() {
         title: "正常网络",
         meta: "未施加弱网",
         profile: null,
-        modeLabel: "Android VPN Agent",
+        modeLabel: getNetworkModeLabel(),
         target: elements.targetApp.value.trim() || "目标应用",
       });
       updateOperationFromSteps({
@@ -4307,6 +4590,7 @@ function bindEvents() {
   elements.networkMode.addEventListener("change", async () => {
     state.networkMode = getNetworkMode();
     updateNetworkModeUi();
+    restartNetworkCurve();
     if (isMacUnityMode()) {
       await loadMacUnityBuiltinTargets(true);
     }
@@ -4320,11 +4604,41 @@ function bindEvents() {
     }
   });
 
+  if (elements.modeCardCurrent && elements.modeCardList) {
+    elements.modeCardCurrent.addEventListener("click", () => {
+      toggleModeCardList();
+    });
+    elements.modeCardCurrent.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        setModeCardListOpen(false);
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleModeCardList();
+    });
+  }
+
   if (elements.modeCardList) {
     elements.modeCardList.addEventListener("click", (event) => {
       const option = event.target.closest("[data-mode]");
       if (!option) return;
       setNetworkMode(option.dataset.mode);
+      setModeCardListOpen(false);
+    });
+    elements.modeCardList.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        setModeCardListOpen(false);
+        if (elements.modeCardCurrent) elements.modeCardCurrent.focus();
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const option = event.target.closest("[data-mode]");
+      if (!option) return;
+      event.preventDefault();
+      setNetworkMode(option.dataset.mode);
+      setModeCardListOpen(false);
+      if (elements.modeCardCurrent) elements.modeCardCurrent.focus();
     });
   }
 
@@ -4370,8 +4684,17 @@ function bindEvents() {
     });
   }
 
+  if (elements.modeCardPicker && elements.modeCardList) {
+    document.addEventListener("click", (event) => {
+      if (!elements.modeCardPicker.contains(event.target)) {
+        setModeCardListOpen(false);
+      }
+    });
+  }
+
   elements.deviceSerial.addEventListener("change", () => {
     state.agent.selectedSerial = elements.deviceSerial.value;
+    resetAndroidNetworkCurveBaseline();
     applySelectedDeviceToForm();
     if (isAndroidVpnMode()) refreshAndroidVpnStatus(false);
   });

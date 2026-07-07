@@ -188,19 +188,29 @@ if ($LASTEXITCODE -ne 0) { throw "aapt2 link failed." }
 $SourceFiles = @()
 foreach ($sourceRoot in @((Join-Path $ScriptDir "src\main\java"), $GenDir)) {
   if (Test-Path $sourceRoot) {
-    $SourceFiles += Get-ChildItem -Path $sourceRoot -Recurse -Filter "*.java" -File | ForEach-Object { $_.FullName }
+    $SourceFiles += Get-ChildItem -Path $sourceRoot -Recurse -Filter "*.java" -File |
+      ForEach-Object {
+        $relativePath = $_.FullName.Substring($ScriptDir.Length).TrimStart([char[]]'\/')
+        $relativePath.Replace("\", "/")
+      }
   }
 }
+$SourceFiles = $SourceFiles | Sort-Object
 [System.IO.File]::WriteAllLines($SourcesList, $SourceFiles, [System.Text.UTF8Encoding]::new($false))
 
-& $JavacBin `
-  -encoding UTF-8 `
-  -source 8 `
-  -target 8 `
-  -bootclasspath (Get-NativePath $AndroidJar) `
-  -d (Get-NativePath $ClassesDir) `
-  "@$(Get-NativePath $SourcesList)"
-if ($LASTEXITCODE -ne 0) { throw "javac failed." }
+Push-Location $ScriptDir
+try {
+  & $JavacBin `
+    -encoding UTF-8 `
+    -source 8 `
+    -target 8 `
+    -bootclasspath (Get-NativePath $AndroidJar) `
+    -d (Get-NativePath $ClassesDir) `
+    "@$(Get-NativePath $SourcesList)"
+  if ($LASTEXITCODE -ne 0) { throw "javac failed." }
+} finally {
+  Pop-Location
+}
 
 Push-Location $ClassesDir
 try {

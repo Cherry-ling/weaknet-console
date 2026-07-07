@@ -58,10 +58,11 @@ const NETWORK_WAVE_CONFIG = {
 const MAC_UNITY_TARGETS_FILE = path.join(ROOT, "mac-unity-targets.json");
 const THEME_PREF_FILE = process.env.WEAKNET_THEME_PREF_FILE || path.join(os.homedir(), ".weaknet-console-theme.json");
 const THEME_KEYS = new Set(["terminal-aurora", "cyber", "classic"]);
+const DEFAULT_THEME = "terminal-aurora";
 const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const ANDROID_VPN_AGENT = {
   packageName: "com.weaknet.agent",
-  versionCode: 11,
+  versionCode: 26,
   activityComponent: "com.weaknet.agent/.MainActivity",
   receiverComponent: "com.weaknet.agent/.CommandReceiver",
   apkPath: path.join(ROOT, "android-agent", "dist", "weaknet-agent-debug.apk"),
@@ -71,9 +72,11 @@ const ANDROID_VPN_AGENT = {
   actions: {
     apply: "com.weaknet.agent.APPLY",
     stop: "com.weaknet.agent.STOP",
+    configure: "com.weaknet.agent.CONFIGURE",
   },
 };
 const ANDROID_PACKAGE_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/;
+const ANDROID_DATAPLANES = new Set(["host-socks", "android-local"]);
 const WIN32_RUNTIME_DIR =
   process.env.WEAKNET_WIN32_RUNTIME_DIR || path.join(ROOT, "windows-backend", "runtime", "ui");
 
@@ -104,6 +107,8 @@ const socksRuntime = {
   allowedIp: "",
   counters: createSocksCounters(),
 };
+let androidHostCleanupInFlight = false;
+let androidHostCleanupLastAttemptAt = 0;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -202,6 +207,10 @@ function writeThemePreference(theme) {
   if (!nextTheme) return "";
   fs.writeFileSync(THEME_PREF_FILE, JSON.stringify({ theme: nextTheme }, null, 2));
   return nextTheme;
+}
+
+function resolveRequestTheme(theme) {
+  return normalizeTheme(theme) || readThemePreference() || DEFAULT_THEME;
 }
 
 function run(command, args, timeoutMs = 5000) {
@@ -1367,8 +1376,11 @@ function normalizeWeaknetRequest(body) {
 function normalizeAndroidVpnRequest(body) {
   const sourceProfile = body.profile || {};
   const presetKey = String(sourceProfile.presetKey || "custom");
+  const requestedDataplane = String(body.dataplane || sourceProfile.dataplane || "host-socks").trim();
+  const dataplane = ANDROID_DATAPLANES.has(requestedDataplane) ? requestedDataplane : "host-socks";
   const profile = {
     presetKey,
+    dataplane,
     displayNameZh: String(sourceProfile.displayNameZh || "自定义弱网").slice(0, 80),
     latencyRttMs: clampNumber(sourceProfile.latencyRttMs, 0, 10000, null),
     jitterMs: clampNumber(sourceProfile.jitterMs, 0, 10000, 0),
@@ -1397,12 +1409,14 @@ function normalizeAndroidVpnRequest(body) {
     serial,
     deviceIp,
     targetApp,
+    dataplane,
+    theme: resolveRequestTheme(body.theme || sourceProfile.theme),
     platform: "Android",
     profile,
   };
 }
 
-function getAndroidVpnProfileSupport(profile) {
+function getAndroidVpnProfileSupport(profile, dataplane = "host-socks") {
   if (profile.presetKey === "normal") {
     return {
       supported: true,
@@ -1424,6 +1438,21 @@ function getAndroidVpnProfileSupport(profile) {
     };
   }
 
+  if (dataplane === "android-local") {
+    if (profile.networkWave && profile.networkWave.enabled) {
+      return {
+        supported: false,
+        mode: "unsupported",
+        message: "Android 本地弱网暂不支持网络波动模式；请关闭网络波动，或切回 Mac真机下发模式。",
+      };
+    }
+    return {
+      supported: true,
+      mode: "local",
+      message: "Android VPN Agent 将在手机本地执行该弱网预设",
+    };
+  }
+
   return {
     supported: true,
     mode: "socks",
@@ -1436,6 +1465,21 @@ function getAndroidVpnProfileSupport(profile) {
 async function isAndroidVpnAgentInstalled(serial) {
   const result = await adbShell(serial, ["pm", "path", ANDROID_VPN_AGENT.packageName], 5000);
   return result.ok && result.stdout.includes(ANDROID_VPN_AGENT.packageName);
+}
+
+async function checkAndroidTargetPackageInstalled(serial, packageName, steps = []) {
+  const args = ["-s", serial, "shell", "pm", "path", packageName];
+  const result = await adb(args, 5000);
+  steps.push(makeAdbStep("校验 Android 目标应用包名", args, result));
+  const installed = result.ok && result.stdout.includes("package:");
+  return {
+    ok: installed,
+    packageName,
+    message: installed
+      ? `目标应用已安装：${packageName}`
+      : `目标应用未安装：${packageName}。请点击“读取前台应用”，或手动填写真实测试 App 包名。`,
+    error: installed ? "" : result.error || result.stderr || result.stdout || "package not found",
+  };
 }
 
 function isTruthyEnv(value) {
@@ -1491,12 +1535,12 @@ async function getAndroidVpnAgentVersion(serial) {
   };
 }
 
-async function ensureAndroidVpnAgentCurrent(serial, steps) {
+async function ensureAndroidVpnAgentCurrent(serial, steps, theme = "") {
   const version = await getAndroidVpnAgentVersion(serial);
   if (version.installed && version.versionCode >= ANDROID_VPN_AGENT.versionCode) {
     return { ok: true, installed: true, versionCode: version.versionCode };
   }
-  const install = await installAndroidVpnAgent({ serial });
+  const install = await installAndroidVpnAgent({ serial, theme });
   steps.push(...(install.steps || []));
   return {
     ok: install.ok,
@@ -1509,6 +1553,7 @@ async function ensureAndroidVpnAgentCurrent(serial, steps) {
 async function installAndroidVpnAgent(body) {
   const serial = String(body.serial || body.deviceSerial || "").trim();
   if (!serial) throw makeHttpError("missing Android device serial", 400);
+  const theme = resolveRequestTheme(body.theme);
 
   const steps = [];
   await ensureAndroidAgentApk(steps);
@@ -1523,6 +1568,10 @@ async function installAndroidVpnAgent(body) {
   }
 
   const ok = result.ok || /Success/i.test(result.stdout);
+  if (ok) {
+    const themeSync = await syncAndroidVpnAgentTheme(serial, theme);
+    steps.push(themeSync);
+  }
   const installError = result.error || result.stderr || result.stdout;
   const userRestricted = /INSTALL_FAILED_USER_RESTRICTED|Install canceled by user|USER_RESTRICTED/i.test(installError);
   return {
@@ -1536,21 +1585,44 @@ async function installAndroidVpnAgent(body) {
     steps: publicizeSteps(steps),
     apkPath: ANDROID_VPN_AGENT.apkPath,
     packageName: ANDROID_VPN_AGENT.packageName,
+    theme,
     requiresUserAction: userRestricted,
     error: ok ? "" : installError,
   };
 }
 
+async function syncAndroidVpnAgentTheme(serial, theme) {
+  const themeKey = resolveRequestTheme(theme);
+  const args = [
+    "-s",
+    serial,
+    "shell",
+    "am",
+    "broadcast",
+    "-n",
+    ANDROID_VPN_AGENT.receiverComponent,
+    "-a",
+    ANDROID_VPN_AGENT.actions.configure,
+    "--es",
+    "theme",
+    themeKey,
+  ];
+  const result = await adb(args, 10000);
+  return makeAdbStep(`同步 Android Agent 皮肤：${themeKey}`, args, result);
+}
+
 async function openAndroidVpnAuthorization(body) {
   const serial = String(body.serial || body.deviceSerial || "").trim();
   if (!serial) throw makeHttpError("missing Android device serial", 400);
+  const theme = resolveRequestTheme(body.theme);
 
   const steps = [];
   await ensureAndroidAgentApk(steps);
-  const agentCurrent = await ensureAndroidVpnAgentCurrent(serial, steps);
+  const agentCurrent = await ensureAndroidVpnAgentCurrent(serial, steps, theme);
   if (!agentCurrent.ok) {
     return { ...(agentCurrent.install || {}), ok: false, steps: publicizeSteps(steps) };
   }
+  steps.push(await syncAndroidVpnAgentTheme(serial, theme));
 
   const args = ["-s", serial, "shell", "am", "start", "-n", ANDROID_VPN_AGENT.activityComponent];
   const result = await adb(args, 10000);
@@ -1573,6 +1645,71 @@ function parseAndroidAgentStatus(output) {
     return JSON.parse(text);
   } catch {
     return { raw: text };
+  }
+}
+
+function isAndroidHostWeaknetRulesActive() {
+  return Boolean(
+    /^android-socks/.test(weaknetRuntime.activeMode || "") ||
+      (weaknetRuntime.activeProfile && weaknetRuntime.activeProfile.targetScope === "android-socks")
+  );
+}
+
+function isAndroidHostWeaknetResidueActive() {
+  return Boolean(socksRuntime.active || isAndroidHostWeaknetRulesActive());
+}
+
+function isAndroidPhoneClearedStatus(status) {
+  return Boolean(status && !status.running && (status.mode === "normal" || status.mode === "idle"));
+}
+
+async function clearAndroidHostWeaknetResidue(reason = "手机端已清除 Android VPN") {
+  if (!isAndroidHostWeaknetResidueActive()) {
+    return { ok: true, attempted: false, cleaned: false, steps: [], message: "无 Mac真机下发残留" };
+  }
+  if (androidHostCleanupInFlight) {
+    return { ok: false, attempted: false, cleaned: false, inProgress: true, steps: [], message: "Mac真机下发残留正在清理" };
+  }
+
+  const now = Date.now();
+  if (now - androidHostCleanupLastAttemptAt < 1500) {
+    return { ok: false, attempted: false, cleaned: false, throttled: true, steps: [], message: "Mac真机下发残留清理刚刚触发" };
+  }
+
+  androidHostCleanupInFlight = true;
+  androidHostCleanupLastAttemptAt = now;
+  const steps = [makeInternalStep("检测到手机端已清除 Android VPN", true, reason)];
+  try {
+    const hasHostRules = isAndroidHostWeaknetRulesActive();
+    if (hasHostRules) {
+      if (IS_WIN32) {
+        const weaknet = await clearWin32WeaknetRules();
+        steps.push(...(weaknet.steps || []));
+      } else {
+        const privilege = await getPrivilegeStatus();
+        if (privilege.ok) {
+          steps.push(...(await runClearWeaknetSteps()));
+        } else {
+          steps.push(makeInternalStep("清理宿主弱网规则", false, privilege.message));
+        }
+      }
+    }
+
+    if (socksRuntime.active) {
+      await stopSocksProxy();
+      steps.push(makeInternalStep("停止本机 SOCKS 出口", true, "手机端已清除，宿主 SOCKS 自动停止"));
+    }
+
+    const ok = steps.every((step) => step.ok);
+    return {
+      ok,
+      attempted: true,
+      cleaned: ok,
+      steps: publicizeSteps(steps),
+      message: ok ? "手机端已清除，电脑端 Mac真机下发残留已自动清理" : "手机端已清除，但电脑端 Mac真机下发残留清理失败",
+    };
+  } finally {
+    androidHostCleanupInFlight = false;
   }
 }
 
@@ -1601,12 +1738,18 @@ async function getAndroidVpnAgentStatus(serial) {
   const status = statusResult.ok ? parseAndroidAgentStatus(statusResult.stdout) : null;
   const serviceRunning = /WeaknetVpnService|com\.weaknet\.agent\/\.WeaknetVpnService/.test(serviceResult.stdout || "");
   const running = Boolean(serviceRunning || (status && status.running));
+  let hostCleanup = null;
+  if (isAndroidPhoneClearedStatus(status) && isAndroidHostWeaknetResidueActive()) {
+    hostCleanup = await clearAndroidHostWeaknetResidue(status.message || "手机端状态已恢复正常网络");
+  }
+
   const macSocks = getSocksRuntimeStatus();
   const socksMissing = Boolean(status && status.running && status.mode === "socks" && !macSocks.active);
+  const hostCleanupFailed = Boolean(hostCleanup && hostCleanup.attempted && !hostCleanup.ok);
 
   return {
     ok: true,
-    healthy: !socksMissing,
+    healthy: !socksMissing && !hostCleanupFailed,
     installed: true,
     versionCode: version.versionCode,
     expectedVersionCode: ANDROID_VPN_AGENT.versionCode,
@@ -1614,13 +1757,18 @@ async function getAndroidVpnAgentStatus(serial) {
     running,
     hostSocks: macSocks,
     macSocks,
+    hostCleanup,
     packageName: ANDROID_VPN_AGENT.packageName,
     status,
     message: socksMissing
       ? "Android VPN Agent 正在 SOCKS 模式运行，但本机 SOCKS 出口未运行；请重新点击应用预设"
-      : status && status.message
-        ? status.message
-        : "Android VPN Agent 已安装",
+      : hostCleanup && hostCleanup.cleaned
+        ? hostCleanup.message
+        : hostCleanupFailed
+          ? hostCleanup.message
+          : status && status.message
+            ? status.message
+            : "Android VPN Agent 已安装",
     statusReadError: statusResult.ok ? "" : statusResult.error || statusResult.stderr,
   };
 }
@@ -1784,22 +1932,32 @@ async function prepareAndroidSocksWeaknet(request) {
 async function clearAndroidVpn(body) {
   const serial = String(body.serial || body.deviceSerial || "").trim();
   if (!serial) throw makeHttpError("missing Android device serial", 400);
+  const requestedDataplane = String(body.dataplane || "host-socks").trim();
+  const dataplane = ANDROID_DATAPLANES.has(requestedDataplane) ? requestedDataplane : "host-socks";
+  const theme = resolveRequestTheme(body.theme);
 
   const steps = [];
-  const privilege = await getPrivilegeStatus();
-  if (IS_WIN32) {
-    if (socksRuntime.active || weaknetRuntime.active) {
-      const weaknet = await clearWin32WeaknetRules();
-      steps.push(...(weaknet.steps || []));
+  const hostRulesActive = isAndroidHostWeaknetRulesActive();
+  const hostSocksActive = socksRuntime.active;
+  const allowUnknownHostCleanup = dataplane !== "android-local" && !weaknetRuntime.active;
+  const shouldClearHostWeaknet = hostRulesActive || hostSocksActive || allowUnknownHostCleanup;
+  if (shouldClearHostWeaknet) {
+    const shouldClearHostRules = hostRulesActive || allowUnknownHostCleanup;
+    const privilege = await getPrivilegeStatus();
+    if (IS_WIN32) {
+      if (shouldClearHostRules) {
+        const weaknet = await clearWin32WeaknetRules();
+        steps.push(...(weaknet.steps || []));
+      }
+    } else if (privilege.ok && shouldClearHostRules) {
+      steps.push(...(await runClearWeaknetSteps()));
+    } else if (shouldClearHostRules) {
+      steps.push(makeInternalStep("跳过 Mac 弱网清理", false, privilege.message));
     }
-  } else if (privilege.ok) {
-    steps.push(...(await runClearWeaknetSteps()));
-  } else if (socksRuntime.active || weaknetRuntime.active) {
-    steps.push(makeInternalStep("跳过 Mac 弱网清理", false, privilege.message));
-  }
-  if (socksRuntime.active) {
-    await stopSocksProxy();
-    steps.push(makeInternalStep("停止 Mac SOCKS 出口", true, "Mac SOCKS 出口已停止"));
+    if (hostSocksActive) {
+      await stopSocksProxy();
+      steps.push(makeInternalStep("停止本机 SOCKS 出口", true, "本机 SOCKS 出口已停止"));
+    }
   }
 
   if (!(await isAndroidVpnAgentInstalled(serial))) {
@@ -1822,6 +1980,9 @@ async function clearAndroidVpn(body) {
     ANDROID_VPN_AGENT.receiverComponent,
     "-a",
     ANDROID_VPN_AGENT.actions.stop,
+    "--es",
+    "theme",
+    theme,
   ];
   const result = await adb(args, 10000);
   steps.push(makeAdbStep("清除 Android VPN 弱网", args, result));
@@ -1840,20 +2001,20 @@ async function clearAndroidVpn(body) {
 
 async function applyAndroidVpn(body) {
   const request = normalizeAndroidVpnRequest(body);
-  const { serial, targetApp, profile } = request;
-  const support = getAndroidVpnProfileSupport(profile);
+  const { serial, targetApp, profile, dataplane, theme } = request;
+  const support = getAndroidVpnProfileSupport(profile, dataplane);
   if (!support.supported) {
     throw makeHttpError(support.message, 400, { support, request });
   }
 
   if (support.mode === "normal") {
-    const result = await clearAndroidVpn({ serial });
+    const result = await clearAndroidVpn({ serial, dataplane, theme });
     return { ...result, ...request, support };
   }
 
   const steps = [];
   await ensureAndroidAgentApk(steps);
-  const agentCurrent = await ensureAndroidVpnAgentCurrent(serial, steps);
+  const agentCurrent = await ensureAndroidVpnAgentCurrent(serial, steps, theme);
   if (!agentCurrent.ok) {
     return {
       ...(agentCurrent.install || {}),
@@ -1864,8 +2025,23 @@ async function applyAndroidVpn(body) {
     };
   }
 
-  if (support.mode !== "socks" && (socksRuntime.active || weaknetRuntime.active)) {
-    await clearAndroidVpn({ serial });
+  if (profile.presetKey !== "normal") {
+    const targetCheck = await checkAndroidTargetPackageInstalled(serial, targetApp, steps);
+    if (!targetCheck.ok) {
+      return {
+        ok: false,
+        mode: "android-target-preflight",
+        message: targetCheck.message,
+        error: targetCheck.error,
+        steps: publicizeSteps(steps),
+        ...request,
+        support,
+      };
+    }
+  }
+
+  if (support.mode !== "socks" && isAndroidHostWeaknetResidueActive()) {
+    await clearAndroidVpn({ serial, dataplane: "host-socks", theme });
   }
 
   let profileForAgent = profile;
@@ -1885,9 +2061,23 @@ async function applyAndroidVpn(body) {
     }
     profileForAgent = {
       ...profile,
+      dataplane: "host-socks",
+      theme,
       socksHost: socksTunnel.macIp,
       socksPort: socksTunnel.socksPort,
       socksUdpMode: "udp",
+    };
+  } else if (support.mode === "local") {
+    profileForAgent = {
+      ...profile,
+      dataplane: "android-local",
+      theme,
+    };
+  } else {
+    profileForAgent = {
+      ...profile,
+      dataplane,
+      theme,
     };
   }
 
@@ -1908,6 +2098,9 @@ async function applyAndroidVpn(body) {
     "--es",
     "targetPackage",
     targetApp,
+    "--es",
+    "theme",
+    theme,
   ];
   const result = await adb(args, 10000);
   steps.push(makeAdbStep("下发 Android VPN 弱网", args, result));
@@ -1915,7 +2108,7 @@ async function applyAndroidVpn(body) {
   let status = await getAndroidVpnAgentStatus(serial);
 
   if (status.status && status.status.mode === "needs_permission") {
-    const auth = await openAndroidVpnAuthorization({ serial });
+    const auth = await openAndroidVpnAuthorization({ serial, theme });
     return {
       ok: false,
       mode: "needs_permission",
@@ -1929,7 +2122,7 @@ async function applyAndroidVpn(body) {
     };
   }
 
-  const expectedMode = support.mode === "socks" ? "socks" : "blackhole";
+  const expectedMode = support.mode === "socks" ? "socks" : support.mode === "local" ? "local" : "blackhole";
   const ok = result.ok && status.status && status.status.running && status.status.mode === expectedMode;
   return {
     ok,

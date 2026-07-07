@@ -60,41 +60,59 @@
             </div>
             <span class="live-dot" id="deviceStatus">未连接</span>
           </div>
-          <div class="mode-card-list" id="modeCardList" aria-label="模式选择">
-            <button class="mode-card-option" data-mode="mac-unity" type="button">
-              <span class="mode-card-icon">MU</span>
-              <span>
-                <strong>Mac Unity</strong>
-                <em>针对 Unity 编辑器 / 播放器及资源请求</em>
+          <div class="mode-card-picker" id="modeCardPicker">
+            <button class="mode-card-current" id="modeCardCurrent" type="button" aria-expanded="false" aria-controls="modeCardList">
+              <span class="mode-card-icon" id="modeCardCurrentIcon">MG</span>
+              <span class="mode-card-current-copy">
+                <strong id="modeCardCurrentTitle">Mac 全局</strong>
+                <em id="modeCardCurrentDescription">对 Mac 所有非 localhost 网络流量生效</em>
               </span>
+              <span class="mode-card-current-chevron" aria-hidden="true"></span>
             </button>
-            <button class="mode-card-option" data-mode="mac-global" type="button">
-              <span class="mode-card-icon">MG</span>
-              <span>
-                <strong>Mac 全局</strong>
-                <em>对 Mac 所有非 localhost 网络流量生效</em>
-              </span>
-            </button>
-            <button class="mode-card-option" data-mode="android-vpn" type="button">
-              <span class="mode-card-icon">AD</span>
-              <span>
-                <strong>Android VPN</strong>
-                <em>通过 ADB + SOCKS，对目标包名生效</em>
-              </span>
-            </button>
-            <button class="mode-card-option" data-mode="macos" type="button">
-              <span class="mode-card-icon">GW</span>
-              <span>
-                <strong>macOS 网关</strong>
-                <em>对指定测试设备 IP 施加规则</em>
-              </span>
-            </button>
+            <div class="mode-card-list" id="modeCardList" aria-label="模式选择" hidden>
+              <button class="mode-card-option" data-mode="mac-unity" type="button">
+                <span class="mode-card-icon">MU</span>
+                <span>
+                  <strong>Mac Unity</strong>
+                  <em>针对 Unity 编辑器 / 播放器及资源请求</em>
+                </span>
+              </button>
+              <button class="mode-card-option" data-mode="mac-global" type="button">
+                <span class="mode-card-icon">MG</span>
+                <span>
+                  <strong>Mac 全局</strong>
+                  <em>对 Mac 所有非 localhost 网络流量生效</em>
+                </span>
+              </button>
+              <button class="mode-card-option" data-mode="android-vpn" type="button">
+                <span class="mode-card-icon">AD</span>
+                <span>
+                  <strong>Mac真机下发</strong>
+                  <em>通过 ADB + SOCKS，对目标包名生效</em>
+                </span>
+              </button>
+              <button class="mode-card-option" data-mode="android-local" type="button">
+                <span class="mode-card-icon">AL</span>
+                <span>
+                  <strong>Android 本地</strong>
+                  <em>手机端 VPN 本地执行弱网</em>
+                </span>
+              </button>
+              <button class="mode-card-option" data-mode="macos" type="button">
+                <span class="mode-card-icon">GW</span>
+                <span>
+                  <strong>macOS 网关</strong>
+                  <em>对指定测试设备 IP 施加规则</em>
+                </span>
+              </button>
+            </div>
           </div>
           <div class="device-grid">
             <div id="networkModeField" class="device-field mode-field">
               <span class="field-title">模式</span>
               <select id="networkMode" class="visually-hidden-select" aria-label="模式">
-                <option value="android-vpn">Android VPN Agent</option>
+                <option value="android-vpn">Mac真机下发</option>
+                <option value="android-local">Android VPN 本地弱网</option>
                 <option value="macos">macOS 网关</option>
                 <option value="mac-global" selected>Mac 全局弱网</option>
                 <option value="mac-unity">Mac Unity 真实断网仿真</option>
@@ -109,9 +127,15 @@
                 </div>
                 <div class="mode-menu" id="modeList" role="radiogroup" aria-label="模式" hidden>
                   <div class="mode-option" data-mode="android-vpn" role="radio" aria-checked="false" tabindex="0">
-                    <span class="mode-name">Android VPN Agent</span>
-                    <button class="mode-tip" type="button" aria-label="Android VPN Agent 说明">?
+                    <span class="mode-name">Mac真机下发</span>
+                    <button class="mode-tip" type="button" aria-label="Mac真机下发说明">?
                       <span class="mode-tip-bubble" role="tooltip">底层逻辑：通过手机端 VPN Agent 接管 Android 指定包名流量，普通弱网经 Mac SOCKS + pf/dnctl，100% 丢包在手机端直接阻断。使用方法：连接 Android 设备，填写目标包名，必要时先安装 Agent 并授权 VPN，再应用预设。</span>
+                    </button>
+                  </div>
+                  <div class="mode-option" data-mode="android-local" role="radio" aria-checked="false" tabindex="0">
+                    <span class="mode-name">Android VPN 本地弱网</span>
+                    <button class="mode-tip" type="button" aria-label="Android VPN 本地弱网说明">?
+                      <span class="mode-tip-bubble" role="tooltip">底层逻辑：通过手机端 VPN Agent 接管 Android 指定包名流量，并在手机 App 内本地施加延迟、抖动、限速、丢包和断续。使用方法：连接 Android 设备安装/授权 Agent 后，填写目标包名并应用预设。</span>
                     </button>
                   </div>
                   <div class="mode-option" data-mode="macos" role="radio" aria-checked="false" tabindex="0">
@@ -154,7 +178,7 @@
             </label>
             <label id="targetAppField" class="device-field">
               <span id="targetAppLabel">目标游戏</span>
-              <input id="targetApp" type="text" value="com.example.game" />
+              <input id="targetApp" type="text" value="" placeholder="例如 com.ffm.global" />
             </label>
             <section class="device-mode-summary" id="deviceModeSummary" aria-label="本机模式摘要" hidden></section>
             <div class="device-actions" id="deviceActions">

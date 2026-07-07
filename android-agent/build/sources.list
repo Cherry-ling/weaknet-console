@@ -1,5 +1,7 @@
-E:\weaknet-console\android-agent\src\main\java\com\weaknet\agent\CommandReceiver.java
-E:\weaknet-console\android-agent\src\main\java\com\weaknet\agent\MainActivity.java
-E:\weaknet-console\android-agent\src\main\java\com\weaknet\agent\WeaknetVpnService.java
-E:\weaknet-console\android-agent\src\main\java\hev\sockstun\TProxyService.java
-E:\weaknet-console\android-agent\build\generated\com\weaknet\agent\R.java
+build/generated/com/weaknet/agent/R.java
+src/main/java/com/weaknet/agent/CommandReceiver.java
+src/main/java/com/weaknet/agent/LocalSocksProxy.java
+src/main/java/com/weaknet/agent/MainActivity.java
+src/main/java/com/weaknet/agent/TunPacketShaper.java
+src/main/java/com/weaknet/agent/WeaknetVpnService.java
+src/main/java/hev/sockstun/TProxyService.java

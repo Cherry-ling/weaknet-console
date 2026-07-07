@@ -3436,11 +3436,17 @@ body.console-layout .status-pill {
   font-size: 12px;
 }
 
+body.console-layout .mode-card-picker,
 body.console-layout .mode-card-list {
   display: grid;
   gap: 12px;
 }
 
+body.console-layout .mode-card-list[hidden] {
+  display: none;
+}
+
+body.console-layout .mode-card-current,
 body.console-layout .mode-card-option {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -3457,19 +3463,46 @@ body.console-layout .mode-card-option {
   text-align: left;
 }
 
+body.console-layout .mode-card-current {
+  position: relative;
+  grid-template-columns: 42px minmax(0, 1fr) 30px;
+  min-height: 82px;
+  padding-right: 12px;
+}
+
 body.console-layout .mode-card-option:hover,
-body.console-layout .mode-card-option:focus-visible {
+body.console-layout .mode-card-option:focus-visible,
+body.console-layout .mode-card-current:hover,
+body.console-layout .mode-card-current:focus-visible,
+body.console-layout .mode-card-current[aria-expanded="true"] {
   border-color: rgba(95, 146, 255, 0.52);
   background: rgba(28, 41, 55, 0.72);
   outline: none;
 }
 
+body.console-layout .mode-card-current,
 body.console-layout .mode-card-option.active {
   border-color: rgba(95, 146, 255, 0.95);
   background:
     linear-gradient(135deg, rgba(95, 146, 255, 0.34), rgba(95, 146, 255, 0.08)),
     rgba(17, 29, 48, 0.92);
   box-shadow: inset 0 0 0 1px rgba(95, 146, 255, 0.2);
+}
+
+body.console-layout .mode-card-current-chevron {
+  justify-self: center;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: var(--text-muted);
+  transform: translateY(-3px) rotate(45deg);
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
+body.console-layout .mode-card-current[aria-expanded="true"] .mode-card-current-chevron {
+  color: var(--text);
+  transform: translateY(3px) rotate(225deg);
 }
 
 body.console-layout .mode-card-icon {
@@ -3486,6 +3519,7 @@ body.console-layout .mode-card-icon {
   letter-spacing: 0.02em;
 }
 
+body.console-layout .mode-card-current strong,
 body.console-layout .mode-card-option strong {
   display: block;
   overflow-wrap: anywhere;
@@ -3494,6 +3528,7 @@ body.console-layout .mode-card-option strong {
   line-height: 1.25;
 }
 
+body.console-layout .mode-card-current em,
 body.console-layout .mode-card-option em {
   display: block;
   margin-top: 6px;
@@ -3501,6 +3536,10 @@ body.console-layout .mode-card-option em {
   font-size: 13px;
   font-style: normal;
   line-height: 1.45;
+}
+
+body.console-layout .mode-card-current-copy {
+  min-width: 0;
 }
 
 body.console-layout .device-grid {
@@ -4191,6 +4230,7 @@ body.console-layout.theme-cyber:not(.theme-terminal-aurora) .status-column {
 
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .config-column > .panel,
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .status-column > .panel,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-current,
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option,
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .preset-card,
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .metric,
@@ -4208,11 +4248,15 @@ body.console-layout.theme-cyber:not(.theme-terminal-aurora) .history-item {
 }
 
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option:hover,
-body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option:focus-visible {
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option:focus-visible,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-current:hover,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-current:focus-visible,
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-current[aria-expanded="true"] {
   border-color: rgba(69, 230, 208, 0.62);
   background: rgba(15, 45, 47, 0.84);
 }
 
+body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-current,
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .mode-card-option.active,
 body.console-layout.theme-cyber:not(.theme-terminal-aurora) .preset-card.active {
   border-color: rgba(115, 245, 139, 0.86);
@@ -4311,6 +4355,7 @@ body.console-layout.theme-classic .status-column {
 
 body.console-layout.theme-classic .config-column > .panel,
 body.console-layout.theme-classic .status-column > .panel,
+body.console-layout.theme-classic .mode-card-current,
 body.console-layout.theme-classic .mode-card-option,
 body.console-layout.theme-classic .preset-card,
 body.console-layout.theme-classic .metric,
@@ -4326,11 +4371,15 @@ body.console-layout.theme-classic .history-item {
 }
 
 body.console-layout.theme-classic .mode-card-option:hover,
-body.console-layout.theme-classic .mode-card-option:focus-visible {
+body.console-layout.theme-classic .mode-card-option:focus-visible,
+body.console-layout.theme-classic .mode-card-current:hover,
+body.console-layout.theme-classic .mode-card-current:focus-visible,
+body.console-layout.theme-classic .mode-card-current[aria-expanded="true"] {
   border-color: rgba(8, 127, 140, 0.48);
   background: #f4fbfc;
 }
 
+body.console-layout.theme-classic .mode-card-current,
 body.console-layout.theme-classic .mode-card-option.active,
 body.console-layout.theme-classic .preset-card.active {
   border-color: rgba(8, 127, 140, 0.78);

@@ -130,20 +130,17 @@ mkdir -p "$CLASSES_DIR" "$DEX_DIR" "$GEN_DIR" "$DIST_DIR"
   -o "$(native_path "$LINKED_APK")" \
   "$(native_path "$BUILD_DIR/resources.zip")"
 
-if [[ "${OS:-}" == "Windows_NT" ]]; then
-  while IFS= read -r source_file; do
-    native_path "$source_file"
-  done < <(find "$ROOT_DIR/src/main/java" "$GEN_DIR" -name '*.java' -print) > "$BUILD_DIR/sources.list"
-else
-  find "$ROOT_DIR/src/main/java" "$GEN_DIR" -name '*.java' -print > "$BUILD_DIR/sources.list"
-fi
-"$JAVAC_BIN" \
-  -encoding UTF-8 \
-  -source 8 \
-  -target 8 \
-  -bootclasspath "$(native_path "$ANDROID_JAR")" \
-  -d "$(native_path "$CLASSES_DIR")" \
-  @"$(native_path "$BUILD_DIR/sources.list")"
+(
+  cd "$ROOT_DIR"
+  find src/main/java build/generated -name '*.java' -print | sort > build/sources.list
+  "$JAVAC_BIN" \
+    -encoding UTF-8 \
+    -source 8 \
+    -target 8 \
+    -bootclasspath "$(native_path "$ANDROID_JAR")" \
+    -d "$(native_path "$CLASSES_DIR")" \
+    @"$(native_path "$BUILD_DIR/sources.list")"
+)
 
 (cd "$CLASSES_DIR" && "$JAR_BIN" cf "$(native_path "$BUILD_DIR/classes.jar")" .)
 "$D8" --min-api 23 --lib "$(native_path "$ANDROID_JAR")" --output "$(native_path "$DEX_DIR")" "$(native_path "$BUILD_DIR/classes.jar")"

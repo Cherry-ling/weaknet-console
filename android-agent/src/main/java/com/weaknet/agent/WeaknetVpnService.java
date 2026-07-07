@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor;
 import android.util.Base64;
 import android.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import hev.sockstun.TProxyService;
@@ -32,15 +33,22 @@ public class WeaknetVpnService extends VpnService {
   private static final String CHANNEL_ID = "weaknet_agent";
   private static final String TAG = "WeaknetVpnService";
   private static final int NOTIFICATION_ID = 61001;
+  private static final int STATUS_REFRESH_MS = 500;
   private static final Pattern PACKAGE_PATTERN = Pattern.compile("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+");
+  private static final String SCOPE_SINGLE = "single";
+  private static final String SCOPE_GLOBAL = "global";
 
   private ParcelFileDescriptor vpnInterface;
   private Thread packetDropThread;
   private Thread tproxyThread;
   private Thread tproxyMonitorThread;
+  private Thread localMonitorThread;
+  private LocalSocksProxy localProxy;
+  private TunPacketShaper tunShaper;
   private volatile boolean packetDropRunning;
   private volatile boolean tproxyRunning;
   private volatile int tproxyMonitorGeneration;
+  private volatile int localMonitorGeneration;
   private volatile long blackholePacketCount;
   private volatile long blackholeByteCount;
   private volatile long blackholeLastHitAt;
@@ -52,7 +60,7 @@ public class WeaknetVpnService extends VpnService {
 
     String action = intent == null ? "" : intent.getAction();
     if (ACTION_STOP.equals(action)) {
-      stopVpn("已由控制台停止");
+      stopVpn("已清除手机端弱网");
       return START_NOT_STICKY;
     }
 
@@ -61,7 +69,7 @@ public class WeaknetVpnService extends VpnService {
       return START_STICKY;
     }
 
-    updateStatus(false, "idle", "", "", "等待弱网控制台下发弱网预设；请不要在系统 VPN 设置中开启“始终开启的 VPN”。", "");
+    updateStatus(false, "idle", "", "", "等待本地应用或控制台下发弱网预设；请不要在系统 VPN 设置中开启“始终开启的 VPN”。", "");
     return START_NOT_STICKY;
   }
 
@@ -93,9 +101,26 @@ public class WeaknetVpnService extends VpnService {
       return;
     }
 
-    if (!isValidPackageName(profile.targetPackage)) {
-      stopVpn("目标包名缺失或不合法");
+    if (!profile.isGlobalScope() && !isValidPackageName(profile.targetPackage)) {
+      closeVpnInterface();
       updateStatus(false, "error", profile, "目标包名缺失或不合法。", "");
+      stopSelf();
+      return;
+    }
+
+    if (!profile.isGlobalScope() && !isTargetPackageInstalled(profile.targetPackage)) {
+      closeVpnInterface();
+      updateStatus(false, "error", profile, "目标应用未安装：" + profile.targetPackage + "。请填写真实测试 App 的包名。", "");
+      stopSelf();
+      return;
+    }
+
+    if (profile.isAndroidLocal()) {
+      if (profile.isAlwaysBlock()) {
+        startBlackhole(profile);
+        return;
+      }
+      startLocalTunnel(profile);
       return;
     }
 
@@ -128,8 +153,8 @@ public class WeaknetVpnService extends VpnService {
         .setSession("弱网代理 - " + profile.displayName)
         .setMtu(1500)
         .addAddress("10.255.0.2", 32)
-        .addRoute("0.0.0.0", 0)
-        .addAllowedApplication(profile.targetPackage);
+        .addRoute("0.0.0.0", 0);
+      applyVpnScope(builder, profile);
 
       try {
         builder.addAddress("fd00:776e:6574::2", 128);
@@ -152,7 +177,7 @@ public class WeaknetVpnService extends VpnService {
       }
 
       startPacketDropper(vpnInterface, profile);
-      ensureForeground("正在对 " + profile.targetPackage + " 执行 100% 丢包");
+      ensureForeground("正在对 " + profile.getTargetLabel() + " 执行 100% 丢包");
       updateStatus(
         true,
         "blackhole",
@@ -186,7 +211,7 @@ public class WeaknetVpnService extends VpnService {
             blackholePacketCount += 1;
             blackholeByteCount += read;
             blackholeLastHitAt = System.currentTimeMillis();
-            if (blackholePacketCount == 1 || blackholePacketCount % 64 == 0 || blackholeLastHitAt - lastReportedAt >= 1000) {
+            if (blackholePacketCount == 1 || blackholePacketCount % 32 == 0 || blackholeLastHitAt - lastReportedAt >= STATUS_REFRESH_MS) {
               updateStatus(true, "blackhole", profile, "Blackhole captured target traffic.", "");
               lastReportedAt = blackholeLastHitAt;
             }
@@ -209,8 +234,8 @@ public class WeaknetVpnService extends VpnService {
         .setMtu(1500)
         .addAddress("198.18.0.1", 15)
         .addRoute("0.0.0.0", 0)
-        .addDnsServer("223.5.5.5")
-        .addAllowedApplication(profile.targetPackage);
+        .addDnsServer("223.5.5.5");
+      applyVpnScope(builder, profile);
 
       vpnInterface = builder.establish();
       if (vpnInterface == null) {
@@ -241,7 +266,7 @@ public class WeaknetVpnService extends VpnService {
       }, "weaknet-tun2socks");
       tproxyThread.start();
 
-      ensureForeground("正在对 " + profile.targetPackage + " 执行 " + profile.displayName);
+      ensureForeground("正在对 " + profile.getTargetLabel() + " 执行 " + profile.displayName);
       updateStatus(
         true,
         "socks",
@@ -261,7 +286,114 @@ public class WeaknetVpnService extends VpnService {
     }
   }
 
+  private void startLocalTunnel(final Profile profile) {
+    closeVpnInterface();
+    resetBlackholeStats();
+
+    try {
+      LocalSocksProxy.Config proxyConfig = new LocalSocksProxy.Config();
+      proxyConfig.displayName = profile.displayName;
+      localProxy = new LocalSocksProxy(this, proxyConfig, new LocalSocksProxy.Listener() {
+        @Override
+        public void onError(String message) {
+          updateStatus(false, "error", profile, "Android 本地弱网代理异常。", message);
+        }
+      });
+      int localPort = localProxy.start();
+
+      Builder builder = new Builder()
+        .setSession("弱网代理 - 本地 - " + profile.displayName)
+        .setBlocking(false)
+        .setMtu(1500)
+        .addAddress("198.18.0.1", 15)
+        .addRoute("0.0.0.0", 0)
+        .addDnsServer("223.5.5.5");
+      applyVpnScope(builder, profile);
+
+      try {
+        builder.addAddress("fd00:776e:6574::3", 128);
+        builder.addRoute("::", 0);
+      } catch (RuntimeException ignored) {
+        // Some Android builds reject IPv6 VPN routes; keep IPv4 local mode available.
+      }
+
+      vpnInterface = builder.establish();
+      if (vpnInterface == null) {
+        stopLocalProxy();
+        updateStatus(
+          false,
+          "needs_permission",
+          profile,
+          "尚未授权 VPN。请打开手机上的弱网代理并点击“授权 VPN 权限”。",
+          ""
+        );
+        stopSelf();
+        return;
+      }
+
+      TunPacketShaper.Config tunConfig = new TunPacketShaper.Config();
+      tunConfig.displayName = profile.displayName;
+      tunConfig.disconnectMode = profile.disconnectMode;
+      tunConfig.packetLossPercent = profile.packetLossPercent;
+      tunConfig.downloadKbps = profile.downloadKbps;
+      tunConfig.uploadKbps = profile.uploadKbps;
+      tunConfig.latencyRttMs = profile.latencyRttMs;
+      tunConfig.jitterMs = profile.jitterMs;
+      tunConfig.disconnectDurationSec = profile.disconnectDurationSec;
+      tunConfig.disconnectIntervalSec = profile.disconnectIntervalSec;
+      tunShaper = new TunPacketShaper(vpnInterface, tunConfig, new TunPacketShaper.Listener() {
+        @Override
+        public void onError(String message) {
+          updateStatus(false, "error", profile, "Android 本地 TUN 包级弱网异常。", message);
+        }
+      });
+      tunShaper.start();
+
+      final File configFile = writeTProxyConfig(profile, "127.0.0.1", localPort, "udp");
+      tproxyRunning = true;
+      tproxyThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            TProxyService.TProxyStartService(configFile.getAbsolutePath(), tunShaper.getTproxyFd());
+          } catch (Throwable error) {
+            Log.e(TAG, "local tun2socks failed", error);
+            tproxyRunning = false;
+            updateStatus(false, "error", profile, "Android 本地 tun2socks 启动失败。", error.getMessage());
+          }
+        }
+      }, "weaknet-local-tun2socks");
+      tproxyThread.start();
+
+      ensureForeground("正在本地对 " + profile.getTargetLabel() + " 执行 " + profile.displayName);
+      updateStatus(
+        true,
+        "local",
+        profile,
+        "已在 Android 本地开启弱网：" + profile.displayName + "。",
+        ""
+      );
+      startLocalMonitor(profile);
+    } catch (PackageManager.NameNotFoundException error) {
+      Log.e(TAG, "Target package is not installed: " + profile.targetPackage, error);
+      stopTunShaper();
+      stopLocalProxy();
+      updateStatus(false, "error", profile, "目标应用未安装。", error.getMessage());
+      stopSelf();
+    } catch (Exception error) {
+      Log.e(TAG, "Unable to start local weaknet VPN", error);
+      stopTunShaper();
+      stopLocalProxy();
+      updateStatus(false, "error", profile, "无法启动 Android 本地弱网。", error.getMessage());
+      stopSelf();
+    }
+  }
+
   private File writeTProxyConfig(Profile profile) throws IOException {
+    return writeTProxyConfig(profile, profile.socksHost, profile.socksPort, profile.socksUdpMode);
+  }
+
+  private File writeTProxyConfig(Profile profile, String socksHost, int socksPort, String socksUdpMode) throws IOException {
     File file = new File(getCacheDir(), "tproxy.conf");
     File logFile = new File(getCacheDir(), "tproxy.log");
     if (logFile.exists()) logFile.delete();
@@ -274,9 +406,9 @@ public class WeaknetVpnService extends VpnService {
         "tunnel:\n" +
         "  mtu: 1500\n" +
         "socks5:\n" +
-        "  port: " + profile.socksPort + "\n" +
-        "  address: '" + escapeYaml(profile.socksHost) + "'\n" +
-        "  udp: '" + escapeYaml(profile.socksUdpMode) + "'\n";
+        "  port: " + socksPort + "\n" +
+        "  address: '" + escapeYaml(socksHost) + "'\n" +
+        "  udp: '" + escapeYaml(socksUdpMode) + "'\n";
     output.write(config.getBytes("UTF-8"));
     output.close();
     return file;
@@ -296,7 +428,7 @@ public class WeaknetVpnService extends VpnService {
             ""
           );
           try {
-            Thread.sleep(1000);
+            Thread.sleep(STATUS_REFRESH_MS);
           } catch (InterruptedException ignored) {
             return;
           }
@@ -306,8 +438,33 @@ public class WeaknetVpnService extends VpnService {
     tproxyMonitorThread.start();
   }
 
+  private void startLocalMonitor(final Profile profile) {
+    final int generation = ++localMonitorGeneration;
+    localMonitorThread = new Thread(new Runnable() {
+      @Override
+      public void run() {
+        while (tproxyRunning && localProxy != null && generation == localMonitorGeneration) {
+          updateStatus(
+            true,
+            "local",
+            profile,
+            "已在 Android 本地开启弱网：" + profile.displayName + "。",
+            ""
+          );
+          try {
+            Thread.sleep(STATUS_REFRESH_MS);
+          } catch (InterruptedException ignored) {
+            return;
+          }
+        }
+      }
+    }, "weaknet-local-monitor");
+    localMonitorThread.start();
+  }
+
   private void stopVpn(String message) {
     closeVpnInterface();
+    resetBlackholeStats();
     updateStatus(false, "normal", "", "", message, "");
     stopForeground(true);
     stopSelf();
@@ -317,13 +474,19 @@ public class WeaknetVpnService extends VpnService {
     packetDropRunning = false;
     tproxyRunning = false;
     tproxyMonitorGeneration += 1;
+    localMonitorGeneration += 1;
     if (tproxyMonitorThread != null) {
       tproxyMonitorThread.interrupt();
+    }
+    if (localMonitorThread != null) {
+      localMonitorThread.interrupt();
     }
     try {
       TProxyService.TProxyStopService();
     } catch (Throwable ignored) {
     }
+    stopTunShaper();
+    stopLocalProxy();
     if (vpnInterface != null) {
       try {
         vpnInterface.close();
@@ -334,6 +497,21 @@ public class WeaknetVpnService extends VpnService {
     packetDropThread = null;
     tproxyThread = null;
     tproxyMonitorThread = null;
+    localMonitorThread = null;
+  }
+
+  private void stopLocalProxy() {
+    if (localProxy != null) {
+      localProxy.stop();
+      localProxy = null;
+    }
+  }
+
+  private void stopTunShaper() {
+    if (tunShaper != null) {
+      tunShaper.stop();
+      tunShaper = null;
+    }
   }
 
   private void resetBlackholeStats() {
@@ -381,6 +559,23 @@ public class WeaknetVpnService extends VpnService {
     return value != null && PACKAGE_PATTERN.matcher(value).matches();
   }
 
+  private boolean isTargetPackageInstalled(String packageName) {
+    try {
+      getPackageManager().getPackageInfo(packageName, 0);
+      return true;
+    } catch (PackageManager.NameNotFoundException ignored) {
+      return false;
+    }
+  }
+
+  private void applyVpnScope(Builder builder, Profile profile) throws PackageManager.NameNotFoundException {
+    if (profile.isGlobalScope()) {
+      builder.addDisallowedApplication(getPackageName());
+      return;
+    }
+    builder.addAllowedApplication(profile.targetPackage);
+  }
+
   private void updateStatus(
     boolean running,
     String mode,
@@ -389,7 +584,7 @@ public class WeaknetVpnService extends VpnService {
     String message,
     String error
   ) {
-    updateStatus(running, mode, presetKey, "", targetPackage, "", 0, "", message, error);
+    updateStatus(running, mode, presetKey, "", "", targetPackage, SCOPE_SINGLE, "", 0, "", message, error);
   }
 
   private void updateStatus(
@@ -404,7 +599,9 @@ public class WeaknetVpnService extends VpnService {
       mode,
       profile.presetKey,
       profile.displayName,
+      profile.dataplane,
       profile.targetPackage,
+      profile.targetScope,
       profile.socksHost,
       profile.socksPort,
       profile.socksUdpMode,
@@ -418,7 +615,9 @@ public class WeaknetVpnService extends VpnService {
     String mode,
     String presetKey,
     String displayName,
+    String dataplane,
     String targetPackage,
+    String targetScope,
     String socksHost,
     int socksPort,
     String socksUdpMode,
@@ -431,7 +630,9 @@ public class WeaknetVpnService extends VpnService {
         + "\"mode\":\"" + escapeJson(mode) + "\","
         + "\"presetKey\":\"" + escapeJson(presetKey) + "\","
         + "\"displayName\":\"" + escapeJson(displayName) + "\","
+        + "\"dataplane\":\"" + escapeJson(dataplane) + "\","
         + "\"targetPackage\":\"" + escapeJson(targetPackage) + "\","
+        + "\"targetScope\":\"" + escapeJson(targetScope) + "\","
         + "\"socksHost\":\"" + escapeJson(socksHost) + "\","
         + "\"socksPort\":" + socksPort + ","
         + "\"socksUdpMode\":\"" + escapeJson(socksUdpMode) + "\","
@@ -442,9 +643,45 @@ public class WeaknetVpnService extends VpnService {
         + "\"error\":\"" + escapeJson(error) + "\","
         + "\"tproxyStats\":" + getTProxyStatsJson() + ","
         + "\"tproxyLogTail\":\"" + escapeJson(readTProxyLogTail()) + "\","
+        + "\"localStats\":" + getLocalStatsJson() + ","
+        + "\"tunStats\":" + getTunStatsJson() + ","
         + "\"updatedAt\":" + System.currentTimeMillis()
         + "}";
     writeStatusFile(lastStatus);
+  }
+
+  private String getLocalStatsJson() {
+    LocalSocksProxy.Stats socks = localProxy == null ? null : localProxy.getStats();
+    TunPacketShaper.Stats tun = tunShaper == null ? null : tunShaper.getStats();
+    if (socks == null && tun == null) return "{}";
+
+    long uploadBytes = tun != null ? tun.uploadBytes.get() : socks.uploadBytes.get();
+    long downloadBytes = tun != null ? tun.downloadBytes.get() : socks.downloadBytes.get();
+    long droppedPackets = tun != null ? tun.droppedPackets.get() : socks.droppedPackets.get();
+    long blockedPackets = tun != null ? tun.blockedPackets.get() : socks.blockedPackets.get();
+    long delayedPackets = tun != null ? tun.delayedPackets.get() : socks.delayedPackets.get();
+    String lastError = tun != null ? tun.lastError : socks == null ? "" : socks.lastError;
+
+    return "{"
+      + "\"shaper\":\"" + (tun != null ? "tun" : "socks") + "\","
+      + "\"tcpAccepted\":" + (socks == null ? 0 : socks.tcpAccepted.get()) + ","
+      + "\"tcpActive\":" + (socks == null ? 0 : socks.tcpActive.get()) + ","
+      + "\"tcpConnectFailed\":" + (socks == null ? 0 : socks.tcpConnectFailed.get()) + ","
+      + "\"udpUploadPackets\":" + (socks == null ? 0 : socks.udpUploadPackets.get()) + ","
+      + "\"udpDownloadPackets\":" + (socks == null ? 0 : socks.udpDownloadPackets.get()) + ","
+      + "\"tunUploadPackets\":" + (tun == null ? 0 : tun.uploadPackets.get()) + ","
+      + "\"tunDownloadPackets\":" + (tun == null ? 0 : tun.downloadPackets.get()) + ","
+      + "\"uploadBytes\":" + uploadBytes + ","
+      + "\"downloadBytes\":" + downloadBytes + ","
+      + "\"droppedPackets\":" + droppedPackets + ","
+      + "\"blockedPackets\":" + blockedPackets + ","
+      + "\"delayedPackets\":" + delayedPackets + ","
+      + "\"lastError\":\"" + escapeJson(lastError) + "\""
+      + "}";
+  }
+
+  private String getTunStatsJson() {
+    return tunShaper == null ? "{}" : tunShaper.getStats().toJson();
   }
 
   private String getTProxyStatsJson() {
@@ -519,11 +756,17 @@ public class WeaknetVpnService extends VpnService {
 
   private static class Profile {
     final String presetKey;
+    final String dataplane;
     final String displayName;
     final String disconnectMode;
     final double packetLossPercent;
     final Double downloadKbps;
     final Double uploadKbps;
+    final Double latencyRttMs;
+    final double jitterMs;
+    final int disconnectDurationSec;
+    final int disconnectIntervalSec;
+    final String targetScope;
     final String targetPackage;
     final String socksHost;
     final int socksPort;
@@ -531,23 +774,35 @@ public class WeaknetVpnService extends VpnService {
 
     Profile(
       String presetKey,
+      String dataplane,
       String displayName,
       String disconnectMode,
       double packetLossPercent,
       Double downloadKbps,
       Double uploadKbps,
+      Double latencyRttMs,
+      double jitterMs,
+      int disconnectDurationSec,
+      int disconnectIntervalSec,
+      String targetScope,
       String targetPackage,
       String socksHost,
       int socksPort,
       String socksUdpMode
     ) {
       this.presetKey = presetKey;
+      this.dataplane = dataplane == null || dataplane.isEmpty() ? "host-socks" : dataplane;
       this.displayName = displayName;
       this.disconnectMode = disconnectMode;
       this.packetLossPercent = packetLossPercent;
       this.downloadKbps = downloadKbps;
       this.uploadKbps = uploadKbps;
-      this.targetPackage = targetPackage;
+      this.latencyRttMs = latencyRttMs;
+      this.jitterMs = jitterMs;
+      this.disconnectDurationSec = disconnectDurationSec;
+      this.disconnectIntervalSec = disconnectIntervalSec;
+      this.targetScope = normalizeTargetScope(targetScope);
+      this.targetPackage = SCOPE_GLOBAL.equals(this.targetScope) ? "" : targetPackage;
       this.socksHost = socksHost;
       this.socksPort = socksPort;
       this.socksUdpMode = socksUdpMode == null || socksUdpMode.isEmpty() ? "udp" : socksUdpMode;
@@ -564,25 +819,70 @@ public class WeaknetVpnService extends VpnService {
       return socksHost != null && !socksHost.isEmpty() && socksPort > 0 && socksPort <= 65535;
     }
 
+    boolean isAndroidLocal() {
+      return "android-local".equals(dataplane) || "local".equals(dataplane);
+    }
+
+    boolean isGlobalScope() {
+      return SCOPE_GLOBAL.equals(targetScope);
+    }
+
+    String getTargetLabel() {
+      if (isGlobalScope()) return "整机流量";
+      return targetPackage;
+    }
+
     static Profile fromIntent(Intent intent) {
       JSONObject json = readProfileJson(intent);
       String targetPackage = firstNonEmpty(
         intent.getStringExtra("targetPackage"),
         json.optString("targetPackage", ""),
-        json.optString("targetApp", "")
+        json.optString("targetApp", ""),
+        firstLegacyTargetPackage(json)
       );
+      String targetScope = firstNonEmpty(json.optString("targetScope", ""), SCOPE_SINGLE);
       return new Profile(
         firstNonEmpty(json.optString("presetKey", ""), "custom"),
+        firstNonEmpty(json.optString("dataplane", ""), "host-socks"),
         firstNonEmpty(json.optString("displayNameZh", ""), json.optString("displayName", ""), "Custom"),
         firstNonEmpty(json.optString("disconnectMode", ""), "none"),
         json.optDouble("packetLossPercent", 0),
         optionalDouble(json, "downloadKbps"),
         optionalDouble(json, "uploadKbps"),
+        optionalDouble(json, "latencyRttMs"),
+        json.optDouble("jitterMs", 0),
+        json.optInt("disconnectDurationSec", 0),
+        json.optInt("disconnectIntervalSec", 0),
+        targetScope,
         targetPackage,
         firstNonEmpty(json.optString("socksHost", ""), intent.getStringExtra("socksHost")),
         json.optInt("socksPort", parseInt(intent.getStringExtra("socksPort"), 0)),
         firstNonEmpty(json.optString("socksUdpMode", ""), "udp")
       );
+    }
+
+    private static String normalizeTargetScope(String scope) {
+      if (SCOPE_GLOBAL.equals(scope)) return SCOPE_GLOBAL;
+      return SCOPE_SINGLE;
+    }
+
+    private static String firstLegacyTargetPackage(JSONObject json) {
+      JSONArray array = json.optJSONArray("targetPackages");
+      if (array != null) {
+        for (int index = 0; index < array.length(); index++) {
+          String packageName = array.optString(index, "").trim();
+          if (!packageName.isEmpty()) return packageName;
+        }
+      }
+      String raw = json.optString("targetPackagesCsv", "");
+      if (!raw.isEmpty()) {
+        String[] parts = raw.split("[,，\\s]+");
+        for (String part : parts) {
+          String packageName = part == null ? "" : part.trim();
+          if (!packageName.isEmpty()) return packageName;
+        }
+      }
+      return "";
     }
 
     private static JSONObject readProfileJson(Intent intent) {
