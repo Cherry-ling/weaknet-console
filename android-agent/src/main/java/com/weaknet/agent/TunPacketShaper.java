@@ -26,6 +26,8 @@ class TunPacketShaper {
     double jitterMs;
     int disconnectDurationSec;
     int disconnectIntervalSec;
+    boolean networkWaveEnabled;
+    String networkWaveMode = "subway-elevator";
   }
 
   static class Stats {
@@ -53,20 +55,36 @@ class TunPacketShaper {
   }
 
   private static class DirectionShaper {
-    private final Double kbps;
     private long nextAvailableAt;
 
-    DirectionShaper(Double kbps) {
-      this.kbps = kbps;
-    }
-
-    synchronized void throttle(int bytes) {
+    synchronized void throttle(int bytes, Double kbps) {
       if (kbps == null || kbps <= 0 || bytes <= 0) return;
       long now = System.currentTimeMillis();
       long waitUntil = Math.max(now, nextAvailableAt);
       long durationMs = Math.max(1L, Math.round((bytes * 8.0d) / kbps));
       nextAvailableAt = waitUntil + durationMs;
       sleepQuietly(Math.max(0L, waitUntil - now));
+    }
+  }
+
+  private static class WaveRule {
+    Double downloadKbps;
+    Double uploadKbps;
+    double packetLossPercent;
+    long delayMs;
+
+    WaveRule() {
+    }
+
+    WaveRule(Double downloadKbps, Double uploadKbps, double packetLossPercent, long delayMs) {
+      this.downloadKbps = downloadKbps;
+      this.uploadKbps = uploadKbps;
+      this.packetLossPercent = packetLossPercent;
+      this.delayMs = delayMs;
+    }
+
+    WaveRule copy() {
+      return new WaveRule(downloadKbps, uploadKbps, packetLossPercent, delayMs);
     }
   }
 
@@ -78,17 +96,19 @@ class TunPacketShaper {
   private final Stats stats = new Stats();
   private final DirectionShaper uploadShaper;
   private final DirectionShaper downloadShaper;
+  private final WaveRule waveRule = new WaveRule();
   private volatile boolean running;
   private Thread uploadThread;
   private Thread downloadThread;
   private long startedAt;
+  private long waveRuleExpiresAt;
 
   TunPacketShaper(ParcelFileDescriptor vpnInterface, Config config, Listener listener) throws IOException {
     this.vpnInterface = vpnInterface;
     this.config = config;
     this.listener = listener;
-    this.uploadShaper = new DirectionShaper(config.uploadKbps);
-    this.downloadShaper = new DirectionShaper(config.downloadKbps);
+    this.uploadShaper = new DirectionShaper();
+    this.downloadShaper = new DirectionShaper();
 
     FileDescriptor tproxyFd = new FileDescriptor();
     FileDescriptor shaperFd = new FileDescriptor();
@@ -205,18 +225,53 @@ class TunPacketShaper {
       stats.droppedPackets.incrementAndGet();
       return false;
     }
-    if (config.packetLossPercent > 0 && Math.random() * 100.0d < config.packetLossPercent) {
+    WaveRule activeRule = getActiveRule();
+    if (activeRule.packetLossPercent > 0 && Math.random() * 100.0d < activeRule.packetLossPercent) {
       stats.droppedPackets.incrementAndGet();
       return false;
     }
-    long delayMs = getDelayMs();
+    long delayMs = activeRule.delayMs;
     if (delayMs > 0) {
       stats.delayedPackets.incrementAndGet();
       sleepQuietly(delayMs);
     }
-    if (upload) uploadShaper.throttle(bytes);
-    else downloadShaper.throttle(bytes);
+    if (upload) uploadShaper.throttle(bytes, activeRule.uploadKbps);
+    else downloadShaper.throttle(bytes, activeRule.downloadKbps);
     return running;
+  }
+
+  private WaveRule getActiveRule() {
+    if (!config.networkWaveEnabled) {
+      return new WaveRule(config.downloadKbps, config.uploadKbps, config.packetLossPercent, getDelayMs());
+    }
+
+    long now = System.currentTimeMillis();
+    synchronized (waveRule) {
+      if (waveRuleExpiresAt <= 0 || now >= waveRuleExpiresAt) {
+        rebuildWaveRule(now, waveRuleExpiresAt <= 0);
+      }
+      return waveRule.copy();
+    }
+  }
+
+  private void rebuildWaveRule(long now, boolean initial) {
+    if (initial) {
+      waveRule.downloadKbps = 500d;
+      waveRule.uploadKbps = 200d;
+      waveRule.packetLossPercent = 2d;
+      waveRule.delayMs = 100L;
+    } else if (Math.random() < 0.15d) {
+      waveRule.downloadKbps = randomInt(5, 30) * 1.0d;
+      waveRule.uploadKbps = randomInt(2, 15) * 1.0d;
+      waveRule.packetLossPercent = round2(randomDouble(10d, 30d));
+      waveRule.delayMs = randomInt(500, 1200);
+    } else {
+      waveRule.downloadKbps = randomInt(50, 3000) * 1.0d;
+      waveRule.uploadKbps = randomInt(20, 1000) * 1.0d;
+      waveRule.packetLossPercent = round2(randomDouble(0d, 5d));
+      waveRule.delayMs = randomInt(30, 400);
+    }
+    waveRuleExpiresAt = now + randomInt(800, 2000);
   }
 
   private long getPeriodicBlockRemainingMs() {
@@ -237,6 +292,18 @@ class TunPacketShaper {
       base = Math.max(0.0d, base - jitter + (Math.random() * jitter * 2.0d));
     }
     return Math.round(base);
+  }
+
+  private static int randomInt(int min, int max) {
+    return min + (int) Math.floor(Math.random() * (max - min + 1));
+  }
+
+  private static double randomDouble(double min, double max) {
+    return min + Math.random() * (max - min);
+  }
+
+  private static double round2(double value) {
+    return Math.round(value * 100.0d) / 100.0d;
   }
 
   private void reportError(IOException error) {

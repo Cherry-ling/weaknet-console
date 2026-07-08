@@ -62,7 +62,7 @@ const DEFAULT_THEME = "terminal-aurora";
 const SOURCE_SIGNATURE_ITEMS = ["index.html", "app.js", "styles.css", "server.js", "mac-unity-targets.json"];
 const ANDROID_VPN_AGENT = {
   packageName: "com.weaknet.agent",
-  versionCode: 26,
+  versionCode: 27,
   activityComponent: "com.weaknet.agent/.MainActivity",
   receiverComponent: "com.weaknet.agent/.CommandReceiver",
   apkPath: path.join(ROOT, "android-agent", "dist", "weaknet-agent-debug.apk"),
@@ -1439,17 +1439,12 @@ function getAndroidVpnProfileSupport(profile, dataplane = "host-socks") {
   }
 
   if (dataplane === "android-local") {
-    if (profile.networkWave && profile.networkWave.enabled) {
-      return {
-        supported: false,
-        mode: "unsupported",
-        message: "Android 本地弱网暂不支持网络波动模式；请关闭网络波动，或切回 Mac真机下发模式。",
-      };
-    }
     return {
       supported: true,
       mode: "local",
-      message: "Android VPN Agent 将在手机本地执行该弱网预设",
+      message: profile.networkWave && profile.networkWave.enabled
+        ? "Android VPN Agent 将在手机本地执行网络波动弱网"
+        : "Android VPN Agent 将在手机本地执行该弱网预设",
     };
   }
 

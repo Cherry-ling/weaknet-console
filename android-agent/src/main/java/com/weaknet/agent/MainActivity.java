@@ -171,6 +171,7 @@ public class MainActivity extends Activity {
     new Preset("high_latency", "高延迟", "RTT 800ms", 800, 200, 1, 5000d, 1000d, "none", 0, 0),
     new Preset("high_loss", "高丢包", "丢包 10%", 200, 80, 10, 3000d, 800d, "none", 0, 0),
     new Preset("intermittent", "断续", "30s/5s", 300, 100, 5, 1000d, 300d, "periodic", 5, 30),
+    new Preset("network_wave", "网络波动", "地铁/电梯随机波动", 100, 0, 2, 500d, 200d, "none", 0, 0, true),
     new Preset("loss_100", "100% 丢包", "完全断网", null, null, 100, 0d, 0d, "always", 0, 0),
   };
 
@@ -1369,6 +1370,10 @@ public class MainActivity extends Activity {
       json.put("disconnectMode", preset.disconnectMode);
       json.put("disconnectDurationSec", preset.disconnectDurationSec);
       json.put("disconnectIntervalSec", preset.disconnectIntervalSec);
+      JSONObject networkWave = new JSONObject();
+      networkWave.put("enabled", preset.networkWaveEnabled);
+      networkWave.put("mode", "subway-elevator");
+      json.put("networkWave", networkWave);
     } catch (Exception ignored) {
     }
     return json.toString();
@@ -2177,6 +2182,7 @@ public class MainActivity extends Activity {
     final String disconnectMode;
     final int disconnectDurationSec;
     final int disconnectIntervalSec;
+    final boolean networkWaveEnabled;
 
     Preset(
       String presetKey,
@@ -2191,6 +2197,36 @@ public class MainActivity extends Activity {
       int disconnectDurationSec,
       int disconnectIntervalSec
     ) {
+      this(
+        presetKey,
+        name,
+        scene,
+        latencyRttMs,
+        jitterMs,
+        packetLossPercent,
+        downloadKbps,
+        uploadKbps,
+        disconnectMode,
+        disconnectDurationSec,
+        disconnectIntervalSec,
+        false
+      );
+    }
+
+    Preset(
+      String presetKey,
+      String name,
+      String scene,
+      Integer latencyRttMs,
+      Integer jitterMs,
+      double packetLossPercent,
+      Double downloadKbps,
+      Double uploadKbps,
+      String disconnectMode,
+      int disconnectDurationSec,
+      int disconnectIntervalSec,
+      boolean networkWaveEnabled
+    ) {
       this.presetKey = presetKey;
       this.name = name;
       this.scene = scene;
@@ -2202,6 +2238,7 @@ public class MainActivity extends Activity {
       this.disconnectMode = disconnectMode;
       this.disconnectDurationSec = disconnectDurationSec;
       this.disconnectIntervalSec = disconnectIntervalSec;
+      this.networkWaveEnabled = networkWaveEnabled;
     }
   }
 

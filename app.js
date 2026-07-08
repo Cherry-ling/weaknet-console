@@ -1875,17 +1875,12 @@ function getAndroidVpnProfileSupport(profile, dataplane = getAndroidDataplane())
   }
 
   if (dataplane === "android-local") {
-    if (isNetworkWaveProfile(profile)) {
-      return {
-        supported: false,
-        mode: "unsupported",
-        message: "Android 本地弱网暂不支持网络波动模式；请关闭网络波动，或切回 Mac真机下发模式。",
-      };
-    }
     return {
       supported: true,
       mode: "local",
-      message: "Android VPN Agent 将在手机本地执行该弱网预设",
+      message: isNetworkWaveProfile(profile)
+        ? "Android VPN Agent 将在手机本地执行网络波动弱网"
+        : "Android VPN Agent 将在手机本地执行该弱网预设",
     };
   }
 

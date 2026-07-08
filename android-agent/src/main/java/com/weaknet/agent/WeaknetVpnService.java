@@ -341,6 +341,8 @@ public class WeaknetVpnService extends VpnService {
       tunConfig.jitterMs = profile.jitterMs;
       tunConfig.disconnectDurationSec = profile.disconnectDurationSec;
       tunConfig.disconnectIntervalSec = profile.disconnectIntervalSec;
+      tunConfig.networkWaveEnabled = profile.networkWaveEnabled;
+      tunConfig.networkWaveMode = profile.networkWaveMode;
       tunShaper = new TunPacketShaper(vpnInterface, tunConfig, new TunPacketShaper.Listener() {
         @Override
         public void onError(String message) {
@@ -584,7 +586,7 @@ public class WeaknetVpnService extends VpnService {
     String message,
     String error
   ) {
-    updateStatus(running, mode, presetKey, "", "", targetPackage, SCOPE_SINGLE, "", 0, "", message, error);
+    updateStatus(running, mode, presetKey, "", "", targetPackage, SCOPE_SINGLE, "", 0, "", false, "subway-elevator", message, error);
   }
 
   private void updateStatus(
@@ -605,6 +607,8 @@ public class WeaknetVpnService extends VpnService {
       profile.socksHost,
       profile.socksPort,
       profile.socksUdpMode,
+      profile.networkWaveEnabled,
+      profile.networkWaveMode,
       message,
       error
     );
@@ -621,6 +625,8 @@ public class WeaknetVpnService extends VpnService {
     String socksHost,
     int socksPort,
     String socksUdpMode,
+    boolean networkWaveEnabled,
+    String networkWaveMode,
     String message,
     String error
   ) {
@@ -636,6 +642,7 @@ public class WeaknetVpnService extends VpnService {
         + "\"socksHost\":\"" + escapeJson(socksHost) + "\","
         + "\"socksPort\":" + socksPort + ","
         + "\"socksUdpMode\":\"" + escapeJson(socksUdpMode) + "\","
+        + "\"networkWave\":{\"enabled\":" + networkWaveEnabled + ",\"mode\":\"" + escapeJson(networkWaveMode) + "\"},"
         + "\"blackholePacketCount\":" + blackholePacketCount + ","
         + "\"blackholeByteCount\":" + blackholeByteCount + ","
         + "\"blackholeLastHitAt\":" + blackholeLastHitAt + ","
@@ -771,6 +778,8 @@ public class WeaknetVpnService extends VpnService {
     final String socksHost;
     final int socksPort;
     final String socksUdpMode;
+    final boolean networkWaveEnabled;
+    final String networkWaveMode;
 
     Profile(
       String presetKey,
@@ -788,7 +797,9 @@ public class WeaknetVpnService extends VpnService {
       String targetPackage,
       String socksHost,
       int socksPort,
-      String socksUdpMode
+      String socksUdpMode,
+      boolean networkWaveEnabled,
+      String networkWaveMode
     ) {
       this.presetKey = presetKey;
       this.dataplane = dataplane == null || dataplane.isEmpty() ? "host-socks" : dataplane;
@@ -806,6 +817,8 @@ public class WeaknetVpnService extends VpnService {
       this.socksHost = socksHost;
       this.socksPort = socksPort;
       this.socksUdpMode = socksUdpMode == null || socksUdpMode.isEmpty() ? "udp" : socksUdpMode;
+      this.networkWaveEnabled = networkWaveEnabled;
+      this.networkWaveMode = networkWaveMode == null || networkWaveMode.isEmpty() ? "subway-elevator" : networkWaveMode;
     }
 
     boolean isAlwaysBlock() {
@@ -857,8 +870,21 @@ public class WeaknetVpnService extends VpnService {
         targetPackage,
         firstNonEmpty(json.optString("socksHost", ""), intent.getStringExtra("socksHost")),
         json.optInt("socksPort", parseInt(intent.getStringExtra("socksPort"), 0)),
-        firstNonEmpty(json.optString("socksUdpMode", ""), "udp")
+        firstNonEmpty(json.optString("socksUdpMode", ""), "udp"),
+        isNetworkWaveEnabled(json),
+        getNetworkWaveMode(json)
       );
+    }
+
+    private static boolean isNetworkWaveEnabled(JSONObject json) {
+      JSONObject networkWave = json.optJSONObject("networkWave");
+      return networkWave != null && networkWave.optBoolean("enabled", false);
+    }
+
+    private static String getNetworkWaveMode(JSONObject json) {
+      JSONObject networkWave = json.optJSONObject("networkWave");
+      if (networkWave == null) return "subway-elevator";
+      return firstNonEmpty(networkWave.optString("mode", ""), "subway-elevator");
     }
 
     private static String normalizeTargetScope(String scope) {
